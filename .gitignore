@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Secrets. Real values stay local — only the *.example templates are committed.
+.env
+.env.*
+!.env.example
+!*.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Tool scratch
+.freebuff/
+
+# The Zidio assignment brief is source material for this project, not part of
+# it. Delete this line (or `git add -f "Zidio Web.pdf"`) to track it.
+Zidio Web.pdf

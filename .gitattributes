@@ -1,0 +1,14 @@
+# Normalise line endings: text is stored as LF in the repo regardless of the
+# author's OS, so a judge cloning on Linux/macOS doesn't see every file as
+# modified.
+* text=auto
+
+# Assets git must not try to normalise.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
