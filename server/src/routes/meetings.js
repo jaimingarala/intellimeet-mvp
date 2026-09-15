@@ -149,9 +149,13 @@ router.delete('/:id/participants/:userId', async (req, res) => {
   }
 });
 
-// End a meeting and mark status
+// End a meeting and mark status. Host-only: the client only shows "Leave" to
+// participants, and a joiner shouldn't be able to end someone else's meeting.
 router.post('/:id/end', requireMeetingAccess, async (req, res) => {
   try {
+    if (req.meeting.host.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Only the host can end the meeting.' });
+    }
     req.meeting.status = 'ended';
     req.meeting.endedAt = new Date();
     await req.meeting.save();

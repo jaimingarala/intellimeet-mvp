@@ -1,4 +1,4 @@
-const ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789'; // no confusing chars (0/o, 1/l/i)
+const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no confusing chars (0/o, 1/l/i)
 
 /**
  * Generates a Google-Meet-style room code, e.g. "xk3-mfqp-czr".
