@@ -1,0 +1,38 @@
+# Render Blueprint for the IntelliMeet API.
+#
+# One service only. REST and Socket.io share a single Express process
+# (server/src/index.js), so unlike the earlier monorepo layout there is no
+# separate socket service and no Redis instance to provision.
+#
+# Secrets are marked `sync: false`, which means their values are entered in the
+# Render dashboard rather than committed here. Render ignores `sync: false`
+# variables on later Blueprint syncs, so real credentials never land in Git.
+services:
+  - type: web
+    name: intellimeet-api
+    runtime: node
+    plan: free
+    buildCommand: npm --prefix server ci
+    startCommand: npm --prefix server start
+    # server/src/index.js answers 200 here; Render uses it to gate deploys.
+    healthCheckPath: /api/health
+    # Only ship a commit once CI is green.
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT is injected by Render; the server reads it and falls back to 5000.
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # The deployed client origin. Must match exactly, with no trailing
+      # slash, or the browser is blocked by CORS. Comma-separate to allow more.
+      - key: CLIENT_ORIGIN
+        sync: false
+      # Optional. Left unset, the summarizer falls back to the free offline
+      # one, so the demo works without any paid key.
+      - key: OPENAI_API_KEY
+        sync: false
