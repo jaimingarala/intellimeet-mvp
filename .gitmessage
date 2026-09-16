@@ -1,0 +1,11 @@
+# <type>(<optional scope>): <subject>
+#
+# Imperative mood, lowercase, <= 72 chars, no trailing period.
+#
+# Why this change is needed (the diff already shows what changed):
+#
+#
+# Footer (optional): Refs: #12 | BREAKING CHANGE: ...
+#
+# Types: feat  fix  test  docs  ci  refactor  perf  chore
+# Lines starting with # are removed by git. See CONTRIBUTING.md for details.

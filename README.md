@@ -88,7 +88,7 @@ npm run dev
 The API + Socket.io server starts on `http://localhost:5000`. Check
 `http://localhost:5000/api/health` for a heartbeat.
 
-### 3. Frontend
+**Frontend**
 
 ```bash
 cd client
@@ -221,7 +221,7 @@ client on every push and pull request.
 
 ## Notes on the underlying spec doc
 
-The uploaded planning document (`Zidio_Web.pdf`) is a submission-guidelines
+The uploaded planning document (`Zidio Web.pdf`) is a submission-guidelines
 template combined with a project brief for a program called LogicVeda /
 Zidio Development. It states plainly that AI-generated project content
 results in disqualification for any stipend — worth keeping in mind: this
