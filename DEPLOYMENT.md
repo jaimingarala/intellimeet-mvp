@@ -44,10 +44,16 @@ Save it as `MONGO_URI` in step 2. Note the name: this project uses `MONGO_URI`,
 3. Deploy, then confirm `https://<service>.onrender.com/api/health` returns
    `{"status":"ok","service":"intellimeet-api",…}`.
 
-Two free-tier behaviours to expect. The service **sleeps after ~15 minutes idle
-and takes ~50 seconds to wake**, which is long enough to look like a broken
-demo — a scheduled keep-alive request every 10 minutes avoids it. And `PORT` is
-assigned by Render; the server reads it, so never hardcode one.
+Two free-tier behaviours to expect. The service **spins down after 15 minutes
+without inbound traffic and takes about a minute to wake**, which is long enough
+to look like a broken demo; `.github/workflows/keepalive.yml` pings
+`/api/health` every 10 minutes to keep it warm and needs `DEMO_API_URL` set as a
+repository variable. Render counts WebSocket messages as traffic, so an open
+meeting room keeps the service awake on its own, and a service kept awake
+continuously consumes almost all of the 750 free instance hours a workspace
+gets per month — exhaust them and Render suspends every free service until the
+next month. `PORT` is assigned by Render; the server reads it, so never
+hardcode one.
 
 ## 3. Vercel — client
 

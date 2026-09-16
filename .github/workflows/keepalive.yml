@@ -1,0 +1,71 @@
+name: Keep-alive
+
+# Render spins down a Free web service that goes 15 minutes without inbound
+# traffic and takes about a minute to wake, showing a loading page meanwhile.
+# For a demo that a judge opens cold, that reads as "the app is broken". This
+# pings the API every 10 minutes to keep it warm.
+#
+# Set the target once under Settings -> Secrets and variables -> Actions ->
+# Variables (a variable, not a secret — the URL is public) as DEMO_API_URL,
+# for example https://intellimeet-api.onrender.com.
+#
+# Two reasons not to treat this as a guarantee. GitHub cron is best-effort:
+# runs are routinely delayed by 15 minutes or more, which is longer than the
+# idle window this is trying to beat, and GitHub silently disables schedules in
+# public repositories after 60 days without a commit. If the demo really must
+# be warm, point a free external pinger (cron-job.org, UptimeRobot) at the same
+# URL — this workflow exists because it needs no third-party account.
+
+on:
+  schedule:
+    # Every 10 minutes, offset off :00. GitHub queues scheduled runs behind a
+    # burst of traffic at the top of each hour, which is when delays are worst.
+    - cron: '4,14,24,34,44,54 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# A delayed run must not cancel one that is already waiting out a cold start.
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping the demo API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/health
+        env:
+          DEMO_API_URL: ${{ vars.DEMO_API_URL }}
+        run: |
+          if [ -z "$DEMO_API_URL" ]; then
+            echo "::notice::DEMO_API_URL is not set, skipping. Add it under Settings -> Secrets and variables -> Actions -> Variables."
+            exit 0
+          fi
+
+          health="${DEMO_API_URL%/}/api/health"
+          echo "Pinging $health"
+
+          for attempt in 1 2 3; do
+            # A cold start takes about a minute, so allow well beyond a normal
+            # request instead of timing out and reporting a false failure.
+            # curl writes 000 to -w itself on a failed connection, so assert
+            # the exit status separately rather than appending a second 000.
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+              --max-time 120 --location "$health" 2>/dev/null) || code=000
+            echo "attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              cat /tmp/health.json
+              echo
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 30
+            fi
+          done
+
+          # Deliberately not `exit 1`. A keep-alive that turns the repository
+          # red every time Render blips would poison the CI badge and teach you
+          # to ignore it. Swap this for a failure if you would rather be told.
+          echo "::warning::health check never returned 200 from $health"
