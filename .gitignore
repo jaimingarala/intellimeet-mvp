@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# Local MongoDB data directory created by `npm run dev`
+.data/
+
 # Secrets. Real values stay local — only the *.example templates are committed.
 .env
 .env.*

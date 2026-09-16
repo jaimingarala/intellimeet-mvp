@@ -41,10 +41,41 @@ intellimeet-mvp/
 ## Running it locally
 
 ### 1. Prerequisites
-- Node.js 18+
-- A MongoDB instance — easiest is a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster, or `mongod` running locally.
 
-### 2. Backend
+- Node.js 22+ (that is what CI runs and what the test runner needs).
+- MongoDB — **optional for the one-command path below**, which starts a local
+  `mongod` for you when nothing is listening. Otherwise use a free
+  [MongoDB Atlas](https://www.mongodb.com/atlas) cluster.
+
+### 2. One command (whole stack)
+
+```bash
+npm run setup   # installs server/ and client/ dependencies
+npm run dev     # MongoDB + API + Vite client
+```
+
+`npm run dev` does the parts that used to need two terminals and a note about
+ports:
+
+- starts MongoDB if nothing is listening on the address in `server/.env`
+  (`mongod`, with data in `.data/mongodb` so it survives restarts and a log at
+  `.data/mongodb/mongod.log`), and leaves an already-running instance — or an
+  Atlas URI — alone;
+- picks free ports for the API and the client, so a second copy of the stack
+  doesn't die with `EADDRINUSE` and nothing has to be hand-edited when 5000 is
+  already taken;
+- passes the API's real port to the client as `VITE_API_URL` and the client's
+  origin to the API as `CLIENT_ORIGIN`, so the two always agree and CORS keeps
+  working even when the ports shift;
+- prefixes each process's output (`mongo`, `api`, `web`), reloads the API on save
+  via `node --watch`, and stops everything on Ctrl+C.
+
+It also creates a missing `.env` from the matching `.env.example`, and tells you
+when a real `JWT_SECRET` still needs setting.
+
+### 3. Or run the pieces separately
+
+**Backend**
 
 ```bash
 cd server
