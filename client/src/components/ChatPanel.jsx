@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MAX_CHAT_MESSAGE_CHARS } from '../lib/limits.js';
 
 export default function ChatPanel({ messages, onSend, currentUserName }) {
   const [text, setText] = useState('');
@@ -31,6 +32,9 @@ export default function ChatPanel({ messages, onSend, currentUserName }) {
         <input
           placeholder="Message the room…"
           value={text}
+          // The server rejects longer messages; stop it here so the user never
+          // sees a limit error they could have avoided.
+          maxLength={MAX_CHAT_MESSAGE_CHARS}
           onChange={(e) => setText(e.target.value)}
         />
         <button className="btn btn-secondary" type="submit">

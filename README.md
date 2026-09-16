@@ -159,6 +159,49 @@ The difference between the two modes matters:
   socket joins, when the room is looked up, and when chat is posted, so a banned
   user stays out across reloads, new tabs, and server restarts.
 
+## Limits and abuse protection
+
+The caps live in one place — `server/src/config/limits.js` — and the client
+mirrors the two user-facing ones in `client/src/lib/limits.js` so the UI stops a
+user before the server has to.
+
+| What | Cap | Enforced by |
+|---|---|---|
+| Pasted transcript | 20,000 characters | `POST /api/meetings/:id/summarize` → `413` |
+| Chat-derived transcript | 20,000 characters, keeping the most recent end | same route, applied while building the fallback |
+| Chat message | 2,000 characters | socket `chat-message` → `error-message` to the sender |
+| Meeting title | 120 characters | `POST /api/meetings` → `413` |
+| Request body | 1 MB | `express.json({ limit: '1mb' })` |
+| Summaries | 10 per 15 minutes **per user** | `express-rate-limit` → `429` |
+| Signup / login attempts | 30 per 15 minutes per IP | `express-rate-limit` → `429` |
+
+Size violations are `413`, malformed values are `400`, and the rate-limited
+summary response carries a `RateLimit-*` header set.
+
+Worth knowing before deploying:
+
+- The summarize limit is **per user, not per IP**, because every call can hit the
+  OpenAI API and cost money. Both limiter stores are in-memory, so the budget is
+  per server process; a multi-instance deploy needs a shared store (Redis) — and
+  behind a proxy, IP-keyed limits need `trust proxy` configured, or every user
+  shares one bucket.
+- A participant has to be *in* the room (joined over the socket) to send chat,
+  not merely listed on the meeting.
+- Chat **history** is not capped yet: `$push` grows a meeting's `chatMessages`
+  array without bound. Fine for an MVP, but a retention policy
+  (`$push` with `$slice`) is worth adding before rooms run for hours.
+- Anyone who can read a meeting can currently overwrite its transcript and
+  summary — only the host is prevented from being removed. Restricting summary
+  generation to the host is a product decision, not yet made.
+
+## Contributing
+
+Work happens on a branch per task and lands through a pull request — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, the commit-message
+convention, and the exact commands CI runs. `main` is kept green by
+`.github/workflows/ci.yml`, which lints and tests the server and builds the
+client on every push and pull request.
+
 ## Scaling up from here (in priority order)
 
 1. **SFU for video** — swap the WebRTC mesh for a media server (LiveKit,

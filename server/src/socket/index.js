@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Meeting = require('../models/Meeting');
+const limits = require('../config/limits');
 
 /**
  * Socket.io namespace-free setup: one room per meeting roomCode.
@@ -112,7 +113,16 @@ function registerSocketHandlers(io) {
     });
 
     socket.on('chat-message', async ({ roomCode, text }) => {
-      if (!roomCode || !text || !text.trim()) return;
+      if (!roomCode || typeof text !== 'string' || !text.trim()) return;
+      // Membership isn't enough: the sender has to be *in* this room, otherwise a
+      // participant who never joined could broadcast into it.
+      if (currentRoom !== roomCode) return;
+      if (text.trim().length > limits.MAX_CHAT_MESSAGE_CHARS) {
+        socket.emit('error-message', {
+          error: `Messages are limited to ${limits.MAX_CHAT_MESSAGE_CHARS} characters.`,
+        });
+        return;
+      }
       try {
         const message = {
           sender: socket.user.id,

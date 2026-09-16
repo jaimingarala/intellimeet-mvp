@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MAX_TRANSCRIPT_CHARS } from '../lib/limits.js';
 
 export default function SummaryPanel({ onGenerate, summary, actionItems, engine }) {
   const [transcript, setTranscript] = useState('');
@@ -23,9 +24,13 @@ export default function SummaryPanel({ onGenerate, summary, actionItems, engine 
           id="transcript"
           rows={6}
           value={transcript}
+          maxLength={MAX_TRANSCRIPT_CHARS}
           onChange={(e) => setTranscript(e.target.value)}
           placeholder="Paste meeting notes, or dictate with your OS/browser speech-to-text…"
         />
+        <div className="field-hint">
+          {transcript.length.toLocaleString()} / {MAX_TRANSCRIPT_CHARS.toLocaleString()} characters
+        </div>
       </div>
       <button className="btn btn-mint" onClick={handleGenerate} disabled={loading} style={{ width: '100%', marginBottom: 16 }}>
         {loading ? 'Generating…' : 'Generate summary + action items'}

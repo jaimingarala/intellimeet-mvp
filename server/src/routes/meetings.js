@@ -1,6 +1,8 @@
 const express = require('express');
 const { isValidObjectId } = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const Meeting = require('../models/Meeting');
+const limits = require('../config/limits');
 const { requireAuth } = require('../middleware/auth');
 const { generateRoomCode } = require('../services/roomCode');
 const { summarizeMeeting } = require('../services/aiService');
@@ -8,6 +10,31 @@ const { evictUserFromRoom, isBanned } = require('../socket');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// Keyed by user rather than IP: every route here is authenticated, and an office
+// NAT or a reverse proxy would otherwise share (or hide behind) one budget.
+const summarizeLimiter = rateLimit({
+  windowMs: limits.SUMMARIZE_RATE_LIMIT.windowMs,
+  limit: limits.SUMMARIZE_RATE_LIMIT.max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  message: { error: 'Too many summaries requested. Try again in a few minutes.' },
+});
+
+/**
+ * Builds the fallback "transcript" from the chat log.
+ *
+ * Keeps the tail rather than the head: the end of a meeting is what a summary
+ * needs, and it keeps the prompt bounded no matter how long the chat ran. Chat
+ * history itself is currently unbounded in the database — see the README's
+ * limits section.
+ */
+function transcriptFromChat(chatMessages) {
+  const joined = chatMessages.map((m) => `${m.senderName}: ${m.text}`).join('\n');
+  if (joined.length <= limits.MAX_TRANSCRIPT_CHARS) return joined;
+  return joined.slice(-limits.MAX_TRANSCRIPT_CHARS);
+}
 
 // Load the meeting and enforce that the caller is the host or a participant.
 // Reading, ending, and summarizing all expose private meeting data, so they
@@ -37,6 +64,11 @@ router.post('/', async (req, res) => {
   try {
     const { title } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required.' });
+    if (typeof title !== 'string' || title.trim().length > limits.MAX_TITLE_CHARS) {
+      return res
+        .status(413)
+        .json({ error: `title must be a string of ${limits.MAX_TITLE_CHARS} characters or fewer.` });
+    }
 
     let roomCode;
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -169,15 +201,26 @@ router.post('/:id/end', requireMeetingAccess, async (req, res) => {
 // For the MVP, "transcript" is either pasted by the host (e.g. from browser
 // speech-to-text) or the accumulated chat log — real-time Whisper transcription
 // is the natural next step once the app is hosted with a mic-capture pipeline.
-router.post('/:id/summarize', requireMeetingAccess, async (req, res) => {
+router.post('/:id/summarize', requireMeetingAccess, summarizeLimiter, async (req, res) => {
   try {
     const meeting = req.meeting;
 
     const { transcript } = req.body;
+    if (transcript !== undefined && typeof transcript !== 'string') {
+      return res.status(400).json({ error: 'transcript must be a string.' });
+    }
+    // The cap is on the *pasted* transcript; the chat-derived fallback below is
+    // bounded separately so a long-running meeting can't blow up the prompt.
+    if (transcript && transcript.trim().length > limits.MAX_TRANSCRIPT_CHARS) {
+      return res.status(413).json({
+        error: `transcript must be ${limits.MAX_TRANSCRIPT_CHARS} characters or fewer.`,
+      });
+    }
+
     const sourceText =
       transcript && transcript.trim().length > 0
-        ? transcript
-        : meeting.chatMessages.map((m) => `${m.senderName}: ${m.text}`).join('\n');
+        ? transcript.trim()
+        : transcriptFromChat(meeting.chatMessages);
 
     const result = await summarizeMeeting(sourceText);
 

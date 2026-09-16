@@ -149,6 +149,15 @@ button {
   border-color: var(--mint);
 }
 
+/* Character counters — shows how close a field is to its server-side cap. */
+.field-hint {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
