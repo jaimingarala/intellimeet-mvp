@@ -4,8 +4,24 @@ import api from '../api/axios';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, resendVerification } = useAuth();
   const navigate = useNavigate();
+
+  const [resent, setResent] = useState(false);
+  const [resending, setResending] = useState(false);
+  // A claimed account keeps working, but its address is inert until the link
+  // sent to it comes back. This is where that nudge lives.
+  const needsVerification = user && user.emailVerified === false;
+
+  async function handleResend() {
+    setResending(true);
+    try {
+      await resendVerification(user.email);
+      setResent(true);
+    } finally {
+      setResending(false);
+    }
+  }
 
   const [title, setTitle] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -75,6 +91,36 @@ export default function Dashboard() {
             <p>Start a new room, join with a code, or revisit a past summary.</p>
           </div>
         </div>
+
+        {user?.isGuest && (
+          <div className="panel guest-panel">
+            <div>
+              <h2>You&apos;re in a guest session</h2>
+              <p>Add an email and password to keep these meetings for good.</p>
+            </div>
+            <button className="btn btn-mint" onClick={() => navigate('/claim')}>
+              Save this session
+            </button>
+          </div>
+        )}
+
+        {needsVerification && (
+          <div className="panel guest-panel">
+            <div>
+              <h2>Confirm your email</h2>
+              <p>
+                {resent
+                  ? `If ${user.email} is waiting for confirmation, a new link is on its way.`
+                  : `We sent a confirmation link to ${user.email}. Open it to finish setting up your account — until then that address won't sign you in.`}
+              </p>
+            </div>
+            {!resent && (
+              <button className="btn btn-mint" onClick={handleResend} disabled={resending}>
+                {resending ? 'Sending…' : 'Resend link'}
+              </button>
+            )}
+          </div>
+        )}
 
         {error && <div className="form-error">{error}</div>}
 

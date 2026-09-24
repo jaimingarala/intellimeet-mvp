@@ -17,16 +17,35 @@ const meetings = [];
 // and for the `.toString()` calls the routes make.
 const newId = () => crypto.randomBytes(12).toString('hex');
 
-function makeUser({ name, email, passwordHash, role = 'member' }) {
+function makeUser({
+  name,
+  email,
+  passwordHash,
+  role = 'member',
+  isGuest = false,
+  emailVerified = true,
+}) {
   return {
     _id: newId(),
     name,
     email: String(email).toLowerCase(),
     passwordHash,
     role,
+    isGuest,
+    // Mirrors the real schema's default: signups and guests carry no pending
+    // proof, and a claim is what sets this false. Present at all because the
+    // route reads it, and a stub that dropped it would make every claimed
+    // account look verified.
+    emailVerified,
+    emailVerification: undefined,
     createdAt: new Date(),
     comparePassword(candidate) {
       return bcrypt.compare(candidate, this.passwordHash);
+    },
+    // Like makeMeeting's: the store holds this object, so a no-op save() still
+    // records the mutations a route made in place.
+    async save() {
+      return this;
     },
     toSafeJSON() {
       return {
@@ -34,6 +53,8 @@ function makeUser({ name, email, passwordHash, role = 'member' }) {
         name: this.name,
         email: this.email,
         role: this.role,
+        isGuest: this.isGuest,
+        emailVerified: this.emailVerified !== false,
         createdAt: this.createdAt,
       };
     },
@@ -68,8 +89,32 @@ const isMember = (meeting, userId) =>
   String(meeting.host) === String(userId) ||
   meeting.participants.some((p) => String(p) === String(userId));
 
+const idList = (values) => (values || []).map(String);
+
+/** Read `a.b` out of the plain objects this store holds. */
+const readPath = (doc, path) =>
+  path.split('.').reduce((value, key) => (value == null ? value : value[key]), doc);
+
+/** The subset of User queries the guest-retention sweep uses. */
+function matchesUser(user, query = {}) {
+  if (query._id?.$in && !idList(query._id.$in).includes(String(user._id))) return false;
+  if (query.isGuest !== undefined && Boolean(user.isGuest) !== Boolean(query.isGuest)) return false;
+  if (query.createdAt?.$lt && !(new Date(user.createdAt) < new Date(query.createdAt.$lt))) return false;
+  return true;
+}
+
 function matches(meeting, query) {
-  if (query.roomCode) return meeting.roomCode === query.roomCode;
+  if (query.roomCode) {
+    // `{ roomCode: { $in: [...] } }` is the guest-retention sweep asking which
+    // of the live rooms still exist.
+    if (query.roomCode.$in) return idList(query.roomCode.$in).includes(String(meeting.roomCode));
+    return meeting.roomCode === query.roomCode;
+  }
+  if (query.host) {
+    // `{ host: { $in: [...] } }` finds the rooms a set of guests owns.
+    if (query.host.$in) return idList(query.host.$in).includes(String(meeting.host));
+    return String(meeting.host) === String(query.host);
+  }
   if (query.$or) {
     return query.$or.some((clause) => {
       if (clause.host) return String(meeting.host) === String(clause.host);
@@ -81,16 +126,36 @@ function matches(meeting, query) {
 }
 
 const User = {
-  async findOne(query) {
+  async findOne(query = {}) {
     if (query.email) {
       return users.find((u) => u.email === String(query.email).toLowerCase()) || null;
     }
+    // `{ 'emailVerification.tokenHash': hash }` is how an emailed link is spent.
+    const dotted = Object.entries(query).find(([key]) => key.includes('.'));
+    if (dotted) {
+      const [path, value] = dotted;
+      return users.find((u) => readPath(u, path) === value) || null;
+    }
     return null;
+  },
+  async findById(id) {
+    return users.find((u) => String(u._id) === String(id)) || null;
   },
   async create(doc) {
     const user = makeUser(doc);
     users.push(user);
     return user;
+  },
+  async find(query = {}) {
+    return users.filter((user) => matchesUser(user, query));
+  },
+  async countDocuments(query = {}) {
+    return users.filter((user) => matchesUser(user, query)).length;
+  },
+  async deleteMany(query = {}) {
+    const doomed = users.filter((user) => matchesUser(user, query));
+    for (const user of doomed) users.splice(users.indexOf(user), 1);
+    return { deletedCount: doomed.length };
   },
   // Cost 4 instead of the real cost 10: this stub only has to be a real bcrypt
   // hash, and CI shouldn't spend 100ms per signup.
@@ -104,10 +169,27 @@ const Meeting = {
   async findOne(query) {
     return meetings.find((m) => matches(m, query)) || null;
   },
-  // Only the dashboard's `.sort().limit()` chain is needed (yet).
+  // The dashboard uses the `.sort().limit()` chain; Mongoose queries are also
+  // thenable, so `await Meeting.find(...)` yields the documents — which is what
+  // the guest-retention sweep relies on. Sorting is real, because which room is
+  // "oldest" decides what the room cap evicts.
   find(query) {
-    const found = meetings.filter((m) => matches(m, query));
-    return { sort: () => ({ limit: () => Promise.resolve(found) }) };
+    let found = meetings.filter((m) => matches(m, query));
+    const chain = {
+      sort: (spec) => {
+        const [[field, direction] = []] = Object.entries(spec || {});
+        if (field) {
+          found = [...found].sort((a, b) => (new Date(a[field]) - new Date(b[field])) * direction);
+        }
+        return chain;
+      },
+      limit: (count) => Promise.resolve(found.slice(0, count)),
+      then: (resolve, reject) => Promise.resolve(found).then(resolve, reject),
+    };
+    return chain;
+  },
+  async countDocuments(query = {}) {
+    return meetings.filter((m) => matches(m, query)).length;
   },
   async create(doc) {
     const meeting = makeMeeting(doc);
@@ -126,6 +208,29 @@ const Meeting = {
     if (!allowed) return { matchedCount: 0, modifiedCount: 0 };
     if (update.$push?.chatMessages) meeting.chatMessages.push(update.$push.chatMessages);
     return { matchedCount: 1, modifiedCount: 1 };
+  },
+  async deleteMany(query = {}) {
+    const doomed = meetings.filter((meeting) => matches(meeting, query));
+    for (const meeting of doomed) meetings.splice(meetings.indexOf(meeting), 1);
+    return { deletedCount: doomed.length };
+  },
+  // The retention sweep passes a filter, but the stub applies the pull to every
+  // meeting: it only ever runs the one $pull shape, and a wider sweep can't
+  // change the outcome of a test.
+  async updateMany(filter, update) {
+    const pull = update.$pull || {};
+    let modifiedCount = 0;
+    for (const meeting of meetings) {
+      let changed = false;
+      for (const field of Object.keys(pull)) {
+        const ids = idList(pull[field]?.$in);
+        const before = (meeting[field] || []).length;
+        meeting[field] = (meeting[field] || []).filter((id) => !ids.includes(String(id)));
+        if (meeting[field].length !== before) changed = true;
+      }
+      if (changed) modifiedCount += 1;
+    }
+    return { modifiedCount };
   },
 };
 

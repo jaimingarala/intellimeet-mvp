@@ -40,4 +40,13 @@ const meetingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// The retention sweep's three lookups: the rooms a deleted guest hosted, and
+// the seats it held in other people's rooms (as a participant, or in the ban
+// list). roomCode is already indexed, which is how the sweep resolves the rooms
+// that still have someone connected. Without these the sweep table-scans every
+// meeting on each run.
+meetingSchema.index({ host: 1 });
+meetingSchema.index({ participants: 1 });
+meetingSchema.index({ banned: 1 });
+
 module.exports = mongoose.model('Meeting', meetingSchema);

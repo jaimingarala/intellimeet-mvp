@@ -4,6 +4,10 @@ MongoDB Atlas (free M0) + Render (free web service) + Vercel. No paid service is
 required for the demo: the AI summarizer falls back to a free offline one when
 `OPENAI_API_KEY` is unset, and STUN alone covers most network pairs.
 
+The four steps take about half an hour, and step 4 is the one to actually run —
+`npm run verify:demo` walks the visitor's path against the deployed URL and names
+whatever is wrong with it.
+
 This replaces the June 2026 checklist stored in the `legacy` remote. The stack
 is the same shape, but the environment variable names, the service count and the
 SPA routing all differ — see the notes in each step.
@@ -68,26 +72,97 @@ hardcode one.
    requires a redeploy, not just a restart.
 4. Deploy, then go back to Render and set `CLIENT_ORIGIN` to the Vercel origin
    and redeploy. **Order matters** — each side needs the other's URL, and until
-   both are correct the browser gets opaque CORS failures.
+   both are correct the browser gets opaque CORS failures. Then set the server's
+   `APP_BASE_URL` to the same Vercel origin, so a confirmation link points at the
+   app rather than at localhost.
 
 `rewrites` in `vercel.json` sends unknown paths to `index.html`. Without it a
 refresh on a room URL such as `/room/ab12-cdef-3456` returns Vercel's 404
 instead of the meeting room. Vercel checks the filesystem before applying
 rewrites, so hashed assets under `/assets/` are still served normally.
 
+## 4. Verify the deployment
+
+```bash
+npm run verify:demo -- --api https://<service>.onrender.com --client https://<app>.vercel.app
+```
+
+That walks the path a visitor takes and reports each step against the thing that
+would be wrong, rather than leaving you to read a browser console: the health
+endpoint and how long it took, a browser-shaped CORS preflight from the client's
+origin, one click of "Try the demo", the room it landed in (sample chat, summary
+and action items included), a second visitor joining that room by link, and a
+refresh on `/room/<code>` to prove the SPA rewrite. It exits non-zero if any of
+them fails, and creates two guest accounts and a room per run — flagged
+`isGuest`, so the retention sweep takes them back out.
+
+The flags default to `DEMO_API_URL`, then `VITE_API_URL` in `client/.env`, and to
+`APP_BASE_URL` in `server/.env` for the origin, so the shorter form works once
+those are set. `--json` prints the same result for a script.
+
+Also worth setting once under **Settings → Secrets and variables → Actions →
+Variables**: `DEMO_API_URL` (a variable, not a secret). It is what
+`.github/workflows/keepalive.yml` pings every 10 minutes, and until it is set the
+workflow does nothing rather than failing.
+
+Then, by hand, the two things a script cannot see: open the Vercel URL in a
+browser and confirm the video tiles connect between two tabs (signalling), and
+later between two devices on different networks (ICE — see the TURN section).
+
+## 5. TURN for the deployed demo
+
+Most network pairs connect directly and need no relay. Two peers behind strict or
+symmetric NATs do not, and that is the case a demo on someone else's wifi will
+find. The client-side variables are `VITE_TURN_URLS`, `VITE_TURN_USERNAME` and
+`VITE_TURN_CREDENTIAL`, set in Vercel (they are inlined at build time, so a
+change needs a redeploy).
+
+Before trusting a relay, prove it can be used from one host:
+
+```bash
+npm run check:turn          # reads client/.env; --urls/--username/--credential override
+```
+
+That speaks TURN to the server directly and reports reachability, the
+credential challenge and a real allocation, with the fix rather than the error
+code when a step fails. `--help` lists the options, and `--secret` mints a
+coturn `use-auth-secret` credential instead of using a static password. The whole
+relay path can be rehearsed without an account: `npm run turn:up` starts a local
+coturn (see `turn/`), and forcing `VITE_ICE_TRANSPORT_POLICY=relay` in a local
+client proves media really travels through it — that the relay *forwards*, which
+`check:turn` cannot show on its own.
+
+What no single machine can show is whether two different networks reach each
+other. That is the two-network smoke test in the README, and it is the run worth
+capturing for the demo video.
+
 ## Environment reference
 
-Server (Render):
+Server (Render) — `render.yaml` carries the demo-ready values, and the tables
+below are what each one does. `npm run verify:demo` and `GET /api/admin/stats`
+both report the misconfigurations that matter.
 
 | Variable | Required | Notes |
 |---|---|---|
 | `MONGO_URI` | yes | Atlas `mongodb+srv://…` string |
-| `JWT_SECRET` | yes | Any long random value; keep out of Git |
+| `JWT_SECRET` | yes | Any long random value; keep out of Git. A short or placeholder value is reported at boot, since a guessable one lets anyone mint a token for any room. |
 | `CLIENT_ORIGIN` | yes | Comma-separated allowed origins, exact, no trailing slash |
 | `JWT_EXPIRES_IN` | no | Defaults to `7d` |
 | `OPENAI_API_KEY` | no | Unset → offline summarizer |
 | `OPENAI_MODEL` | no | Defaults to `gpt-4o-mini` |
 | `PORT` | no | Injected by Render |
+| `TRUST_PROXY` | no | Defaults to one trusted hop in production, which is what the platform proxy is. Both rate limiters are IP-keyed, so turning this off makes every visitor share one budget. |
+| `DEMO_LOGIN_ENABLED` | no | Defaults to on. `false` removes the one-click demo path (it answers `403`), which is the path the rubric weights most. |
+| `DEMO_TITLE` | no | Title given to the room a guest creates. |
+| `DEMO_MAX_GUEST_ROOMS` | no | Defaults to `200`. A count bound on demo rooms, alongside the age-based sweep; `0` disables it. |
+| `GUEST_RETENTION_ENABLED` | no | Defaults to on. |
+| `GUEST_RETENTION_HOURS` | no | Defaults to `24`: how old a guest is before the sweep removes it and its room. |
+| `GUEST_RETENTION_INTERVAL_MINUTES` | no | Defaults to `60`. The sweep runs once shortly after boot, then on this interval. |
+| `APP_BASE_URL` | no | The URL people reach the app at; confirmation links point here. Set it to the Vercel origin, or the link goes nowhere. |
+| `EMAIL_VERIFICATION_REQUIRED` | no | Defaults to **on**, which refuses login for a claimed address until a mailed link comes back. `render.yaml` sets it to `false` because production sends no mail without a webhook — an account claimed on such a deployment would otherwise stay pending forever. |
+| `MAIL_WEBHOOK_URL` | no | JSON `POST { to, subject, text, link }`. Required for real verification mail. |
+| `MAIL_WEBHOOK_TOKEN` | no | Bearer token for that webhook. |
+| `ADMIN_TOKEN` | no | Enables `GET /api/admin/stats` and `POST /api/admin/sweep` (both `404` without it). Also the way to read this deployment's own config warnings. |
 
 Client (Vercel):
 
@@ -98,17 +173,7 @@ Client (Vercel):
 | `VITE_TURN_URLS` | no | Needed only for peers behind strict/symmetric NAT |
 | `VITE_TURN_USERNAME` | no | |
 | `VITE_TURN_CREDENTIAL` | no | Served to the browser — use short-lived credentials |
-
-## Verify the deployment
-
-- `curl https://<service>.onrender.com/api/health` returns 200.
-- Open the Vercel URL, sign up, start a meeting.
-- Open the room URL in a second tab — chat and video should connect. Two tabs on
-  the same machine prove signalling; two devices on different networks prove
-  ICE. Only the second case needs TURN.
-- Hard-refresh on a `/room/<code>` URL to confirm the SPA rewrite works.
-- Watch the browser console: `blocked by CORS policy` means `CLIENT_ORIGIN` and
-  the Vercel origin disagree.
+| `VITE_ICE_TRANSPORT_POLICY` | no | `relay` forces media through TURN; the way to *prove* a relay carried a call. Leave empty in normal use. |
 
 ## Local development
 

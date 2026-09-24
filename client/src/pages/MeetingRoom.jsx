@@ -6,7 +6,47 @@ import { useAuth } from '../context/AuthContext.jsx';
 import VideoGrid from '../components/VideoGrid.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
 import SummaryPanel from '../components/SummaryPanel.jsx';
-import { getIceServers, applyRemoteDescription, addOrQueueIceCandidate } from '../lib/webrtc.js';
+import {
+  getIceServers,
+  getIceTransportPolicy,
+  hasTurnConfigured,
+  describeSelectedPath,
+  applyRemoteDescription,
+  addOrQueueIceCandidate,
+} from '../lib/webrtc.js';
+
+/**
+ * What to show on a peer's tile: whether media is going direct, through the TURN
+ * relay, or not at all. Seeing "via TURN" is the point of a relay-only smoke
+ * test — it is the visible proof that the relay path carried the call.
+ */
+function peerPathBadge(diag) {
+  if (!diag?.state) return { tone: 'pending', text: 'connecting', title: 'Gathering candidates…' };
+  if (diag.state === 'failed' || diag.state === 'disconnected') {
+    return {
+      tone: 'bad',
+      text: 'no path',
+      title: diag.error
+        ? `ICE error ${diag.error.code}: ${diag.error.text}`
+        : 'ICE could not find a working path. A TURN server is required across strict NATs.',
+    };
+  }
+  if (diag.state !== 'connected' && diag.state !== 'completed') {
+    return { tone: 'pending', text: diag.state, title: 'ICE state' };
+  }
+  if (diag.relayed) {
+    return {
+      tone: 'relay',
+      text: 'via TURN',
+      title: `Relayed through TURN (local ${diag.localType}, remote ${diag.remoteType})`,
+    };
+  }
+  return {
+    tone: 'ok',
+    text: 'direct',
+    title: `Direct peer-to-peer (local ${diag.localType}, remote ${diag.remoteType})`,
+  };
+}
 
 export default function MeetingRoom() {
   const { roomCode } = useParams();
@@ -25,10 +65,21 @@ export default function MeetingRoom() {
   const [engine, setEngine] = useState('');
   const [loadError, setLoadError] = useState('');
   const [removed, setRemoved] = useState(null); // { banned } once the host evicts us
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [peerDiagnostics, setPeerDiagnostics] = useState({}); // socketId -> { state, relayed, ... }
 
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
+  const candidateTypesRef = useRef({}); // socketId -> Set of host/srflx/relay seen
+
+  // Env-derived, so it never changes for the life of the page.
+  const relayOnly = getIceTransportPolicy() === 'relay';
+  const relayWithoutTurn = relayOnly && !hasTurnConfigured();
+
+  const updateDiagnostics = useCallback((socketId, patch) => {
+    setPeerDiagnostics((prev) => ({ ...prev, [socketId]: { ...prev[socketId], ...patch } }));
+  }, []);
 
   // Load meeting metadata (title, prior summary/chat) on mount.
   useEffect(() => {
@@ -50,7 +101,11 @@ export default function MeetingRoom() {
 
   const createPeerConnection = useCallback(
     (socketId, name) => {
-      const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+      const pc = new RTCPeerConnection({
+        iceServers: getIceServers(),
+        // 'all' normally; 'relay' when proving the TURN path.
+        iceTransportPolicy: getIceTransportPolicy(),
+      });
 
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
@@ -60,6 +115,13 @@ export default function MeetingRoom() {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
+          // Track the kinds of candidate we gathered: a `relay` among them means
+          // TURN is reachable, which is the other half of proving the relay path.
+          const types = candidateTypesRef.current[socketId] || new Set();
+          if (event.candidate.type) types.add(event.candidate.type);
+          candidateTypesRef.current[socketId] = types;
+          updateDiagnostics(socketId, { candidates: [...types], state: pc.iceConnectionState });
+
           socketRef.current?.emit('signal', {
             to: socketId,
             data: { type: 'candidate', candidate: event.candidate },
@@ -67,16 +129,35 @@ export default function MeetingRoom() {
         }
       };
 
-      // Surface TURN/STUN failures instead of silently failing to connect.
+      // Surface TURN/STUN failures instead of silently failing to connect — on
+      // the tile, not just in the console, because whoever runs a cross-network
+      // test is looking at the video, not the devtools.
       pc.onicecandidateerror = (event) => {
+        updateDiagnostics(socketId, {
+          error: { code: event.errorCode, text: event.errorText || 'unknown', url: event.url || '' },
+        });
         console.warn(
           `ICE candidate error (${event.errorCode}): ${event.errorText || 'unknown'} ${event.url || ''}`.trim()
         );
       };
 
       pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === 'failed') {
+        const state = pc.iceConnectionState;
+        updateDiagnostics(socketId, { state });
+
+        if (state === 'failed') {
           console.warn(`ICE connection to ${socketId} failed`);
+        }
+
+        if (state === 'connected' || state === 'completed') {
+          // Which path won, direct or relayed? This is what the badge reports.
+          describeSelectedPath(pc)
+            .then((path) => {
+              if (path) updateDiagnostics(socketId, path);
+            })
+            .catch(() => {
+              // Stats are best-effort diagnostics; a failure here isn't fatal.
+            });
         }
       };
 
@@ -94,7 +175,7 @@ export default function MeetingRoom() {
       peerConnectionsRef.current[socketId] = pc;
       return pc;
     },
-    []
+    [updateDiagnostics]
   );
 
   // Acquire camera/mic, then connect to Socket.io and wire up signaling.
@@ -171,6 +252,12 @@ export default function MeetingRoom() {
           pc.close();
           delete peerConnectionsRef.current[socketId];
         }
+        delete candidateTypesRef.current[socketId];
+        setPeerDiagnostics((prev) => {
+          const next = { ...prev };
+          delete next[socketId];
+          return next;
+        });
         setPeers((prev) => prev.filter((p) => p.socketId !== socketId));
       });
 
@@ -208,6 +295,8 @@ export default function MeetingRoom() {
     peerConnectionsRef.current = {};
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
+    candidateTypesRef.current = {};
+    setPeerDiagnostics({});
     setLocalStream(null);
     setPeers([]);
     // A client-initiated disconnect won't be retried, which covers the case
@@ -241,6 +330,20 @@ export default function MeetingRoom() {
     setSummary(data.summary);
     setActionItems(data.actionItems);
     setEngine(data.engine);
+  }
+
+  // Whoever opens this link becomes an anonymous guest in this room, so it is
+  // the invite path now — worth making copyable rather than making people
+  // select the address bar.
+  async function copyInviteLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/room/${roomCode}`);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard access can be blocked (insecure context or denied) — the URL
+      // in the address bar still works.
+    }
   }
 
   async function handleLeave() {
@@ -288,12 +391,41 @@ export default function MeetingRoom() {
           <div>
             <strong>{meeting?.title || 'Meeting'}</strong>
           </div>
-          <span className="room-code">{roomCode}</span>
+          <div className="room-invite">
+            {user?.isGuest && (
+              <button className="btn btn-mint" onClick={() => navigate('/claim')}>
+                Save this session
+              </button>
+            )}
+            <span className="room-code">{roomCode}</span>
+            <button className="btn btn-secondary" onClick={copyInviteLink}>
+              {linkCopied ? 'Link copied' : 'Copy invite link'}
+            </button>
+          </div>
         </div>
 
         {loadError && <div className="form-error" style={{ margin: 16 }}>{loadError}</div>}
 
-        <VideoGrid localStream={localStream} localName={user?.name || 'You'} peers={peers} />
+        {relayWithoutTurn && (
+          <div className="form-error" style={{ margin: 16 }}>
+            Relay-only mode is on (<code>VITE_ICE_TRANSPORT_POLICY=relay</code>) but no TURN server is
+            configured, so peers cannot connect. Set <code>VITE_TURN_URLS</code>, or drop the policy.
+          </div>
+        )}
+        {relayOnly && !relayWithoutTurn && (
+          <div className="relay-note">
+            Relay-only mode: every call is being routed through TURN. This is the proof run.
+          </div>
+        )}
+
+        <VideoGrid
+          localStream={localStream}
+          localName={user?.name || 'You'}
+          peers={peers}
+          peerStatus={Object.fromEntries(
+            peers.map((p) => [p.socketId, peerPathBadge(peerDiagnostics[p.socketId])])
+          )}
+        />
 
         <div className="controls-bar">
           <button className={`control-btn ${micOn ? '' : 'off'}`} onClick={toggleMic} title="Toggle microphone">

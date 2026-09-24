@@ -47,16 +47,24 @@ history.
 
 | ID | Task | Notes |
 |---|---|---|
-| P1.1 | Seed script for a demo account (`server/scripts/seed-demo.js`) | Idempotent; no schema change. |
-| P1.2 | "Try the demo" one-click button on the login page | Rubric: core functionality available **without sign-up**. Logs into the demo account and lands in a fresh demo meeting. Optional stretch: real guest join (bigger — guest identities across REST + sockets). |
-| P1.3 | Deploy server (Render free tier) + MongoDB Atlas M0 | Env: `MONGO_URI`, `JWT_SECRET`, `CLIENT_ORIGIN`, `PORT`. Socket.io websockets work on Render. |
-| P1.4 | Deploy client (Vercel/Netlify), `VITE_API_URL` → server | HTTPS automatic (rubric requires it). |
-| P1.5 | Keep-alive ping every ~10 min | Free tiers cold-start in ~50 s, which directly fights the rubric's "<5 s initial load". Use a scheduled GitHub Actions workflow (already adding CI in P2.4). |
-| P1.6 | Real TURN for the demo | Metered/Twilio free credential or self-hosted coturn; `VITE_TURN_*` vars already wired. For `turns:` you need a certificate. |
-| P1.7 | Two-network smoke test (phone hotspot + wifi) | This is the "real multi-user session" the video needs, and the only way to prove TURN works. |
+| P1.1 | ✅ Guest provisioning on demand (`POST /api/auth/demo`, `services/guest.js`) | Superseded the original seed-script/shared-account plan: each visit creates a real anonymous `User` (flagged `isGuest`, unusable random password hash) plus a room of their own, seeded with a sample meeting. No script to run. `services/guestRetention.js` sweeps guests and their rooms after `GUEST_RETENTION_HOURS` (24h), so the path can't grow the DB without bound. |
+| P1.2 | ✅ "Try the demo" one-click button on the login page | Rubric: core functionality available **without sign-up**. Each visitor gets a distinct identity and room, and a room link auto-joins a visitor as a guest — the "real guest join" stretch, across REST + sockets, so two people can meet with no accounts. Still needs TURN (P1.6) before two *networks* reliably connect. |
+| P1.3 | Deploy server (Render free tier) + MongoDB Atlas M0 | `render.yaml` now carries the whole demo-shaped env surface (demo path, retention, `APP_BASE_URL`, verification off with no mail transport, optional `ADMIN_TOKEN`), so this is a Blueprint import plus four secrets. **Needs you**: the Render and Atlas accounts. |
+| P1.4 | Deploy client (Vercel/Netlify), `VITE_API_URL` → server | `vercel.json` supplies build, output and the SPA rewrite. HTTPS automatic (rubric requires it). **Needs you**: the Vercel account. |
+| P1.5 | ✅ Keep-alive ping every ~10 min | `.github/workflows/keepalive.yml` pings `/api/health` every 10 minutes; free tiers cold-start in ~50 s, which directly fights the rubric's "<5 s initial load". **Needs you**: set the `DEMO_API_URL` repository variable, or the workflow stays inert. |
+| P1.8 | ✅ `npm run verify:demo` | Checks a deployment from the outside the way a visitor meets it — health and how long it took, a browser-shaped CORS preflight from the client origin, one click of the demo, the room it lands in, a second visitor joining by link, and a refresh on the room URL — and prints the thing to change rather than the thing that failed. Exits non-zero, `--json` for scripts. This is how Gate A gets verified instead of eyeballed. |
+| P1.9 | ✅ Deployment checks at boot | `config/deployment.js` reports the misconfigurations that are invisible from the inside (placeholder `JWT_SECRET`, an origin still saying localhost, verification on with no mail transport, short `ADMIN_TOKEN`) and sets `trust proxy` in production, without which every visitor behind the platform proxy shares one rate-limit budget and the demo button starts refusing after ~30 clicks. Also visible via `GET /api/admin/stats`. |
+| P1.6 | Real TURN for the demo | Metered/Twilio free credential or self-hosted coturn; `VITE_TURN_*` vars already wired. For `turns:` you need a certificate. `npm run check:turn` verifies reachability, the credential and the allocation before you rely on it, and `npm run turn:up` runs a local coturn (in `turn/`) so the whole relay path can be exercised without an account. What is left here is a *hosted* relay for the deployed demo. |
+| P1.7 | Two-network smoke test (phone hotspot + wifi) | This is the "real multi-user session" the video needs, and the only way to prove NAT traversal between two actual networks. The relay half is now provable locally (see P1.6), so run `check:turn` first: if it passes, a failure here is the network path between the peers, not the relay. |
 
 **Gate A:** an anonymous visitor opens the HTTPS URL, clicks once, and is in a
 room with working video; two peers on different networks connect.
+
+Half of it is verified locally today: the whole stack runs under `npm run dev`,
+one click provisions a guest, and the room opens populated (sample chat, summary,
+action items) with `npm run verify:demo` reporting 6 of 6 against the local API
+and client. What is left is the deployed URL, which needs the accounts above, and
+the cross-network half, which needs a second device.
 
 ## Phase 2 — Technical depth  ·  25%
 
@@ -137,7 +145,8 @@ here's why" reads better than a checkbox that falls over in the demo.
 ## Needs you (accounts / decisions)
 
 - GitHub repo (public) to push to; Render + Vercel + Atlas accounts.
-- TURN credentials for the deployed demo.
+- A `DEMO_API_URL` repository variable, or the keep-alive workflow does nothing.
+- TURN credentials for the deployed demo (the local coturn in `turn/` proves the relay path without one).
 - Decision: add vitest for client tests, or leave the client untested (P2.3).
 - Decision: commit the brief `Zidio Web.pdf` or keep it out (P0.3).
 - Decision: enforce or remove the unused `role` field (P2.6).

@@ -15,6 +15,7 @@ one person can actually run and demo:
 | Spec feature | MVP status |
 |---|---|
 | JWT auth, signup/login | ✅ Full |
+| One-click demo (no sign-up) | ✅ Anonymous guests, one per visitor, each with their own room or joining by link. A guest can later **claim** the session to keep what it built; the address it attaches is verified by email before it can sign in. |
 | Real-time video (WebRTC) | ✅ Mesh peer-to-peer, good for small rooms (2–6 people). Not SFU-based, so it won't scale to 50+ participants — that needs a media server (mediasoup/LiveKit), noted below as a next step. |
 | Real-time chat | ✅ Full, via Socket.io, persisted per meeting |
 | AI meeting intelligence | ✅ Real feature, not a mock: paste a transcript (or leave it blank to summarize the chat log) and get a summary + action items. Uses OpenAI if you set `OPENAI_API_KEY`; otherwise falls back to a free, offline extractive summarizer so the whole app runs with zero API cost. |
@@ -101,7 +102,146 @@ Open `http://localhost:5173`. Sign up, click "Start meeting," and open the
 room URL in a second browser tab (or another device on the same network) to
 test video + chat between two participants.
 
-### 4. Optional: TURN for strict NATs
+### 4. Try the demo (no sign-up)
+
+The login page has a **Try the demo** button: one click provisions an anonymous
+**guest** and drops them into a room of their own — no account, and no shared
+credentials to type. Each visitor therefore gets a distinct identity and a
+distinct room, so two people clicking the button never collide. A new guest room
+is seeded with a short sample meeting — a chat log, the transcript behind it, and
+the summary and action items — so the chat and the AI tab show real content on
+arrival instead of an empty screen.
+
+**Guest rooms are joined by link.** Anyone who opens a room URL without signing
+in becomes a new guest *in that room*, so **Copy invite link** in the room header
+is all it takes to get a second person — on another device or network — into the
+same meeting and exercise the two-peer video path. Guests join as participants,
+never as the host, so they can't end or moderate a room they were invited to.
+
+**A guest can keep what it built.** From the room (or the dashboard), **Save
+this session** asks for a name, email and password and turns the guest into a
+real account. The user id is untouched, so the rooms, chat and AI summaries are
+already theirs — nothing is copied or re-created — and the account is out of
+guest retention's reach from then on. The credentials then work on the ordinary
+login form.
+
+Until they do that, a guest cannot be logged into: the password hash is of a
+random value that is never stored or disclosed. Guests are ordinary members
+otherwise, flagged with `isGuest` so they can be told apart (and aged out)
+later. Set `DEMO_LOGIN_ENABLED=false` in `server/.env` to remove the path
+entirely, and `DEMO_TITLE` to change the title a guest's room gets.
+
+**Guest data is swept on a timer.** Each guest is a stored user and a stored
+room, so a background job removes guests — and the rooms they own, chat, summary
+and action items included — once they are older than `GUEST_RETENTION_HOURS`
+(default 24), and releases any seat they held in someone else's room. It runs
+shortly after boot (so a host that sleeps still catches up on wake) and then
+every `GUEST_RETENTION_INTERVAL_MINUTES` (default 60). Only accounts flagged
+`isGuest` are ever touched; set `GUEST_RETENTION_ENABLED=false` to keep guests
+indefinitely.
+
+Its lookups are indexed — `{ isGuest, createdAt }` on users, and `host`,
+`participants` and `banned` on meetings — so each run is an index scan rather
+than a collection scan, and stays that way as the demo accumulates data.
+Mongoose builds them when the app connects; for a collection that is already
+large, create them out-of-band instead of on a cold start.
+
+Age is not the only test, though: **a demo that is still running is never cut
+off mid-session.** Anything with a connected socket is left for the next sweep —
+the guest themselves, and the host of a room that still has someone in it even
+when that host has already left and only an invited visitor is sitting there
+(deleting the host would take the room down with them). The sweep logs what it
+kept. That check reads live Socket.io state, so it only works in-process — a
+sweep run from cron cannot see who is connected, which is the main reason this
+runs inside the server rather than beside it.
+
+**There is also a count bound, which holds even when the sweep doesn't.**
+`DEMO_MAX_GUEST_ROOMS` (default 200) caps how many guest rooms exist at once:
+when a new demo room would exceed it, the oldest room that *nobody is in* is
+evicted — the same cascade as the sweep, guest and chat and all. A room in use is
+never evicted to make space; if every room is occupied the cap is exceeded rather
+than turning a visitor away, so growth is then bounded by real concurrency. Set
+`DEMO_MAX_GUEST_ROOMS=0` to drop the bound, and read the current count against it
+from `GET /api/admin/stats`.
+
+#### Sweeping from cron instead of the timer
+
+The in-process timer is the default. If a platform would rather have an external
+scheduler — or the process sleeps too often for a timer to fire reliably — set
+`ADMIN_TOKEN` to a long random value and drive the sweep from cron:
+
+```bash
+cd server
+ADMIN_TOKEN=... npm run sweep:guests
+```
+
+That command drives two endpoints, both requiring the `x-admin-token` header and
+both absent (returning `404`) while `ADMIN_TOKEN` is unset, so a deployment that
+doesn't want this surface has nothing listening:
+
+- `GET /api/admin/stats` — retention config, who is connected right now, how many
+guest accounts are stored, and what the last sweep did.
+- `POST /api/admin/sweep` — runs the sweep and returns what it removed.
+
+**The sweep deliberately does not run in the cron process itself.** Deciding
+whether a demo is still going needs Socket.io's live state, which a separate
+process cannot see; a script that opened MongoDB directly would cheerfully delete
+a room someone is sitting in. Triggering the endpoint keeps one process and one
+view of who is connected.
+
+One more limit before pointing a public URL at this: `/demo` provisions a user
+per call, and `/claim` converts one, so both share the signup/login rate limit
+(30 requests per 15 minutes per IP) — a whole office behind one NAT shares that
+budget.
+
+#### Checking a deployed demo
+
+```bash
+npm run verify:demo -- --api https://<service>.onrender.com --client https://<app>.vercel.app
+```
+
+This is the deployment half of the checks in this document: it walks the path a
+visitor takes against the real URL — the health endpoint and what it took to
+answer, a browser-shaped CORS preflight from the client's origin, one click of
+"Try the demo", the room it landed in (sample chat, summary and action items
+included), a second visitor joining that room by link, and a refresh on
+`/room/<code>` to prove the SPA rewrite — and reports the thing to change rather
+than the thing that failed. It exits non-zero if any step does, and creates two
+guest accounts and a room per run, which guest retention sweeps up afterwards.
+`DEPLOYMENT.md` has the same walkthrough with the accounts it needs.
+
+### Claiming verifies the address
+
+`/claim` is the one path that attaches an address nobody has proven, and the
+risk is specific: a squatter typing a stranger's email would otherwise reserve
+it, and because email is the login key, could later sign in under an address
+that isn't theirs — or at least block the real owner from claiming it.
+
+So a claim lands in a *pending* state. The address is recorded, a single-use
+token is emailed to it, and **login is refused until that token comes back**:
+holding the token is the proof, since the only way to get one is to receive mail
+at the address. Everything else is unaffected — the claimant keeps the session
+and the rooms, chat and summaries they built, because the user id never changes.
+
+- `POST /api/auth/verify-email` — spends the link (`{ token }`). It deliberately
+  does **not** return a session: the link proves the address, the password signs
+  you in. A forwarded email can't be traded for a logged-in browser.
+- `POST /api/auth/resend-verification` — sends a replacement link, and answers
+  identically whether or not the address exists, so it can't be used to ask
+  "does this person have an account?".
+
+Only the token's hash is stored, so a database leak yields no working links, and
+a token is bound to the address it was sent to, so it can't be replayed against
+a different one. Issuing a new token replaces the old, so an earlier link dies
+the moment a later one is sent.
+
+Mail goes out over `MAIL_WEBHOOK_URL` (a JSON POST — every provider offers one,
+and it keeps the project dependency-free). With it unset, the server logs the
+message in dev and sends nothing in production, since a verification link in a
+production log is a working credential. Set `EMAIL_VERIFICATION_REQUIRED=false`
+to skip the pending state entirely, for a deployment that can't send mail.
+
+### 5. Optional: TURN for strict NATs
 
 By default the client uses only public STUN, which discovers each peer's
 address but cannot relay media. Two peers behind strict or symmetric NATs
@@ -119,7 +259,113 @@ Any TURN server works — self-hosted [coturn](https://github.com/coturn/coturn)
 Twilio, Metered, etc. These values reach the browser, so for anything public
 prefer short-lived credentials minted by the backend over a static password.
 
-### 5. Optional: real AI summaries
+#### Checking the relay before you need it
+
+```bash
+npm run check:turn
+```
+
+This talks TURN to the servers in `client/.env` directly and reports three things
+per URL: that the host answers, that it demands credentials (and which realm),
+and that *our* credentials allocate a relay address. One host is enough — no
+second network, no browser:
+
+```
+turn:turn.example.com:3478 (udp)
+ ✓ reachable   STUN answered — this host appears as 203.0.113.5:41234
+ ✓ challenge   realm "intellimeet.test", nonce issued for intellimeet
+ ✓ relay       allocated 198.51.100.7:53512 (lifetime 600s)
+```
+
+Exit status is 0 if at least one relay allocated. Every failure comes with the
+thing to change rather than a number: `401`/`403`/`441` point at the credentials
+(and at `--secret` if the server uses coturn's `use-auth-secret`, where the
+credential must be a time-limited HMAC token rather than the shared password),
+`508` means the relay is out of capacity, and a timeout points at a firewall.
+`--insecure` skips TLS verification for a self-signed development relay,
+`-v` dumps every message exchanged, and `--help` lists the rest.
+
+What it does **not** prove is that the relay forwards media, which needs a peer
+the server can reach. That half stays with the smoke test below — this exists to
+rule out the boring reasons it would fail.
+
+#### A local relay, for proving the media path
+
+No account is needed to exercise a real relay: `turn/docker-compose.yml` runs
+coturn on this machine. Docker is the only requirement — no accounts, and no
+Docker settings to change.
+
+```bash
+npm run turn:up      # npm run turn:logs to watch it, turn:down to stop it
+```
+
+Only the listening port is published, which is enough because of how relay-only
+media actually travels: a browser never sends straight to the other peer's relay
+address, it sends to its own allocation and the server forwards. Both allocations
+live in this one container, so the forwarding never leaves it and the relay port
+range does not have to be reachable from the host. (coturn is told
+`--external-ip=127.0.0.1` so that the relay address it advertises is one the
+browser can reach; without it coturn would advertise the container's own address
+and a call would allocate and then silently fail.)
+
+The relay's credentials are throwaway and live in `turn/turnserver.conf`, so put
+the same three values in `client/.env`:
+
+```
+VITE_TURN_URLS=turn:127.0.0.1:3478
+VITE_TURN_USERNAME=intellimeet
+VITE_TURN_CREDENTIAL=devpassword
+```
+
+`npm run check:turn` should then report `reachable`, `challenge` and `relay`.
+That confirms the client's configuration matches the running relay, which is the
+first thing worth ruling out when a call fails.
+
+Now set `VITE_ICE_TRANSPORT_POLICY=relay`, restart the client, and open a room in
+two tabs. The nuance worth being precise about: relay-only forbids host and STUN
+candidates, so both tabs must go through coturn *even though they share a
+machine*, and both tiles should badge **via TURN**. That makes it a genuine
+end-to-end proof of the relay — allocation, permissions and media forwarding —
+and it is the half `check:turn` cannot reach, because a tool on one host can ask
+for an allocation but has no second peer to send media to.
+
+What it still cannot tell you is whether two *different* networks can reach each
+other: the relay is on this machine, so it says nothing about NAT traversal in
+the wild. That remains the two-network test below. What it buys is being able to
+debug the relay half locally first, which is the half that usually fails for
+boring reasons. `npm run turn:down` stops it.
+
+#### Proving it: the two-network smoke test
+
+A localhost two-tab test normally proves nothing about TURN — both tabs gather
+host candidates and connect directly without ever touching the relay. The one
+exception is the local relay above with the policy forced to `relay`, where there
+is nowhere else to go. What no single machine can tell you is whether two
+different networks can reach each other, so this test has to be two networks:
+
+1. Configure a real `VITE_TURN_*` (above), confirm it with `npm run check:turn`,
+   and restart the client.
+2. Set `VITE_ICE_TRANSPORT_POLICY=relay` and restart again. This forbids direct
+   connections, so a call can only succeed *through* TURN — if it connects now,
+   the relay carried the media. The room shows an amber **via TURN** badge on
+   each peer when that is what happened, and a banner confirming relay-only mode.
+3. Put the two peers on genuinely different paths — one on wifi, one on a phone
+   hotspot is the cheapest version. Avoid two devices behind the same NAT if you
+   can; that is the case that would have worked without TURN anyway.
+4. Both should see each other's tile, an amber **via TURN** badge, and hear each
+   other. Hover the badge for the candidate types that were used.
+5. Set `VITE_ICE_TRANSPORT_POLICY` back to empty for normal use. Leaving it on
+   routes every call through the relay: correct but slower and metered.
+
+If it fails, the tile says so instead of going quietly black: **no path** means
+ICE found nothing, and the title carries the `icecandidateerror` code — a
+`401`/`403` there is almost always wrong `VITE_TURN_CREDENTIAL`, and a `701`
+means the relay address was unreachable. A **direct** badge during step 4 means
+the policy didn't take effect (the client wasn't restarted). Run `check:turn`
+first either way: if it passes, the problem is the network path between the two
+peers, not the relay itself.
+
+### 6. Optional: real AI summaries
 
 By default, the "Generate summary" button uses a free offline summarizer —
 no API key needed, works immediately. To use GPT-quality summaries instead,
@@ -182,9 +428,12 @@ Worth knowing before deploying:
 
 - The summarize limit is **per user, not per IP**, because every call can hit the
   OpenAI API and cost money. Both limiter stores are in-memory, so the budget is
-  per server process; a multi-instance deploy needs a shared store (Redis) — and
-  behind a proxy, IP-keyed limits need `trust proxy` configured, or every user
-  shares one bucket.
+  per server process; a multi-instance deploy needs a shared store (Redis). The
+  IP-keyed limits also need `trust proxy` set, or every visitor behind a platform
+  proxy looks like the same address and they all share one bucket — production
+  trusts one hop by default (override with `TRUST_PROXY`), which is what stops
+  thirty demo clicks from anywhere in the world exhausting the budget for the
+  rest of the afternoon.
 - A participant has to be *in* the room (joined over the socket) to send chat,
   not merely listed on the meeting.
 - Chat **history** is not capped yet: `$push` grows a meeting's `chatMessages`

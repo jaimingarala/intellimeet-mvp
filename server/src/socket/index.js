@@ -45,6 +45,32 @@ async function evictUserFromRoom(roomCode, userId, { banned = false, by = null }
   return targets.length;
 }
 
+/**
+ * Who is connected right now, from live socket state — the users, and the
+ * meeting rooms they are actually sitting in.
+ *
+ * Guest retention reads this so a sweep can't pull a room out from under a demo
+ * that is still running. It returns empty sets until Socket.io is up (a
+ * REST-only process, or a sweep run out of process), which reads as "nothing is
+ * live" — accurate for a separate process, and the reason the sweep belongs in
+ * the server.
+ */
+function getLiveSession() {
+  const userIds = new Set();
+  const roomCodes = new Set();
+  if (!ioRef) return { userIds, roomCodes };
+
+  for (const socket of ioRef.sockets.sockets.values()) {
+    if (socket.user?.id) userIds.add(String(socket.user.id));
+    // `socket.rooms` also holds the socket's own id, which is not a meeting room.
+    for (const room of socket.rooms) {
+      if (room !== socket.id) roomCodes.add(room);
+    }
+  }
+
+  return { userIds, roomCodes };
+}
+
 function registerSocketHandlers(io) {
   ioRef = io;
   io.use((socket, next) => {
@@ -166,4 +192,4 @@ function registerSocketHandlers(io) {
   });
 }
 
-module.exports = { registerSocketHandlers, evictUserFromRoom, isBanned };
+module.exports = { registerSocketHandlers, evictUserFromRoom, isBanned, getLiveSession };

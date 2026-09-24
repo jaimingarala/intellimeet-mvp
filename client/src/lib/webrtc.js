@@ -40,6 +40,61 @@ export function getIceServers() {
   return iceServers;
 }
 
+/** Whether a TURN relay is configured at all. */
+export function hasTurnConfigured() {
+  return parseUrlList(import.meta.env.VITE_TURN_URLS).length > 0;
+}
+
+/**
+ * Which candidates ICE is allowed to use.
+ *
+ *   VITE_ICE_TRANSPORT_POLICY=relay
+ *
+ * restricts gathering to relay candidates, so media can only ever travel
+ * through the configured TURN server. That is what turns "the call connected"
+ * into "the call connected *through TURN*" — proof of the relay path without
+ * inspecting packets. Leave it unset for normal use, where a direct peer-to-peer
+ * path is cheaper and lower latency; `relay` requires working TURN credentials.
+ */
+export function getIceTransportPolicy() {
+  const raw = String(import.meta.env.VITE_ICE_TRANSPORT_POLICY || '').trim().toLowerCase();
+  return raw === 'relay' ? 'relay' : 'all';
+}
+
+/**
+ * Read the live candidate pair off a connection and say whether media is going
+ * through a relay. Returns null until ICE has nominated a pair.
+ */
+export async function describeSelectedPath(pc) {
+  const stats = await pc.getStats();
+
+  let pair = null;
+  stats.forEach((report) => {
+    if (report.type === 'transport' && report.selectedCandidatePairId) {
+      pair = stats.get(report.selectedCandidatePairId) || pair;
+    }
+  });
+  if (!pair) {
+    stats.forEach((report) => {
+      if (report.type === 'candidate-pair' && report.nominated && report.state === 'succeeded') {
+        pair = report;
+      }
+    });
+  }
+  if (!pair) return null;
+
+  const local = stats.get(pair.localCandidateId);
+  const remote = stats.get(pair.remoteCandidateId);
+  const localType = local?.candidateType;
+  const remoteType = remote?.candidateType;
+
+  return {
+    relayed: localType === 'relay' || remoteType === 'relay',
+    localType,
+    remoteType,
+  };
+}
+
 // Ice candidates are only valid to add once the remote description is set.
 // In a mesh call they routinely arrive early -- the offerer trickles its
 // candidates while the answerer is still applying the offer -- so they have to

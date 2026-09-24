@@ -8,6 +8,12 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "turn:up": "docker compose -f turn/docker-compose.yml up -d",
+    "turn:down": "docker compose -f turn/docker-compose.yml down",
+    "turn:logs": "docker compose -f turn/docker-compose.yml logs -f coturn",
+    "check:turn": "node scripts/check-turn.mjs",
+    "verify:demo": "node scripts/verify-demo.mjs",
+    "test:scripts": "node --test \"scripts/test/*.test.mjs\"",
     "setup": "npm --prefix server ci && npm --prefix client ci",
     "test": "npm --prefix server test",
     "test:coverage": "npm --prefix server run test:coverage",

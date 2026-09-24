@@ -7,6 +7,10 @@
 # Secrets are marked `sync: false`, which means their values are entered in the
 # Render dashboard rather than committed here. Render ignores `sync: false`
 # variables on later Blueprint syncs, so real credentials never land in Git.
+#
+# The values below are the ones a demo deployment wants; DEPLOYMENT.md has the
+# same list with the reasoning, and `TRUST_PROXY` is deliberately absent because
+# production already trusts the one proxy hop in front of it.
 services:
   - type: web
     name: intellimeet-api
@@ -32,6 +36,50 @@ services:
       # slash, or the browser is blocked by CORS. Comma-separate to allow more.
       - key: CLIENT_ORIGIN
         sync: false
+
+      # "Try the demo": one click provisions an anonymous guest with a room of
+      # their own. This is the highest-weighted path on the rubric, so it is on
+      # by default rather than left to a dashboard toggle.
+      - key: DEMO_LOGIN_ENABLED
+        value: "true"
+      - key: DEMO_TITLE
+        value: IntellMeet live demo
+      # Guests are throwaway users, so bound them twice over: by count here and
+      # by age in the sweep below.
+      - key: DEMO_MAX_GUEST_ROOMS
+        value: "200"
+      - key: GUEST_RETENTION_ENABLED
+        value: "true"
+      - key: GUEST_RETENTION_HOURS
+        value: "24"
+      - key: GUEST_RETENTION_INTERVAL_MINUTES
+        value: "60"
+
+      # Where a confirmation email points, i.e. the URL people reach the app at.
+      # Set this to the Vercel origin in the dashboard.
+      - key: APP_BASE_URL
+        sync: false
+      # A guest can claim its session as a real account, which emails a one-time
+      # link to the address it types. Without a mail transport there is nothing
+      # to send it with, so this deployment trusts the claim instead of leaving
+      # the account permanently pending. Set a webhook and flip this to true for
+      # the fully verified path.
+      - key: EMAIL_VERIFICATION_REQUIRED
+        value: "false"
+      # A JSON POST of { to, subject, text, link }: every provider has an HTTP
+      # send endpoint, and it keeps the project dependency-free.
+      - key: MAIL_WEBHOOK_URL
+        sync: false
+      - key: MAIL_WEBHOOK_TOKEN
+        sync: false
+
+      # Operator endpoints (GET /api/admin/stats, POST /api/admin/sweep). Left
+      # unset they return 404, so nothing is listening; set a long random value
+      # to drive the sweep from cron, or to read the deployment's own warnings
+      # back out of /api/admin/stats.
+      - key: ADMIN_TOKEN
+        sync: false
+
       # Optional. Left unset, the summarizer falls back to the free offline
       # one, so the demo works without any paid key.
       - key: OPENAI_API_KEY

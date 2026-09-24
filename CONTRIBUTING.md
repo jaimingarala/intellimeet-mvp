@@ -10,6 +10,8 @@ default path, not an exception.
   have no `engines` pin yet, so this is by convention).
 - **MongoDB** — local `mongod` or a free Atlas cluster. Only needed to *run* the
   app; the test suites stub the database and need neither Mongo nor a `.env`.
+- **Docker** (optional) — `npm run turn:up` runs a local coturn relay so the
+  TURN path can be tested without an account. Nothing else needs it.
 - Local setup (env files, installing, running) lives in the [README](README.md).
   Don't duplicate it here.
 
@@ -114,6 +116,7 @@ Run exactly what CI runs:
 ```bash
 cd server && npm run lint && npm test        # npm run test:coverage for the report
 cd ../client && npm run lint && npm run build
+npm run test:scripts                         # STUN codec, from the repository root
 ```
 
 Two things that trip people up:
@@ -128,13 +131,28 @@ Two things that trip people up:
 ## Tests
 
 - **Server**: Node's built-in `node:test` runner, files under `server/test/`.
-  A new route belongs in the suite that matches its concern
-  (`auth`, `meeting-access`, `moderation`); a new socket event needs a socket
-  suite (not written yet).
-- **Coverage** is around 82% of lines via `npm run test:coverage`. Don't let it
-  drop: new behaviour should come with a test, or the PR should say why it can't.
+  Twelve suites today — `admin`, `auth`, `capacity`, `claim`,
+  `email-verification`, `guest`, `guest-retention`, `indexes`, `meeting-access`,
+  `moderation`, `hardening` and `socket`. A new route belongs in the suite that
+  matches its concern; a new socket event belongs in `socket.test.js`, alongside
+  the existing join / chat relay / moderation event coverage.
+
+  `email-verification` follows the real flow — it reads the one-time link out of
+  the mailer's in-memory outbox and spends it over HTTP — rather than setting the
+  flag on the model, so the token plumbing is covered too. Suites that claim an
+  account must expect `emailVerified: false` unless they turn
+  `EMAIL_VERIFICATION_REQUIRED` off themselves.
+- **Coverage** is around 88% of lines and 84% of branches via
+  `npm run test:coverage`. Don't let it drop: new behaviour should come with a
+  test, or the PR should say why it can't.
 - **Client**: no test runner yet — `client/src/lib/webrtc.js` (the pure
   ICE-queue and config logic) is the first thing worth covering.
+- **Scripts**: `node:test` again, under `scripts/test/`. Today that is the STUN
+  codec behind `npm run check:turn`, pinned to the published test vectors in
+  RFC 5769. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is
+  subtly wrong still looks fine locally and fails against every real server, so
+  the check would report a network problem that doesn't exist. Those tests are
+  dependency-free, which is why CI runs them without an install step.
 
 ## Documentation expectations
 

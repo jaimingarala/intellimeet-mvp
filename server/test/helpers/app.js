@@ -14,6 +14,34 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 process.env.OPENAI_API_KEY = '';
 process.env.PORT = '';
 process.env.CLIENT_ORIGIN = 'http://localhost:5173';
+// Empty means "enabled" (see services/guest.js), which is what the guest tests
+// assert — a local .env that turned the path off must not fail the suite.
+process.env.DEMO_LOGIN_ENABLED = '';
+// The retention sweep would otherwise query the in-memory models on boot, and
+// race suites that manipulate the store. Tests drive purgeStaleGuests directly.
+process.env.GUEST_RETENTION_ENABLED = 'false';
+process.env.GUEST_RETENTION_HOURS = '24';
+// Generous, so a suite creating a handful of demo rooms never trips the cap;
+// the capacity suite sets its own value per test.
+process.env.DEMO_MAX_GUEST_ROOMS = '200';
+// So the admin routes exist (they 404 without a token); the suite that checks
+// that default clears this variable itself.
+process.env.ADMIN_TOKEN = 'test-admin-token';
+// Verification is on for the suites, whatever a local .env says — the claim
+// suite asserts the gate, and the email suite turns it off itself for the case
+// that exercises the escape hatch.
+process.env.EMAIL_VERIFICATION_REQUIRED = 'true';
+// Never POST to a real mail provider from a test. With no transport the mailer
+// falls back to its in-memory outbox, which is how the suites follow a link.
+process.env.MAIL_WEBHOOK_URL = '';
+process.env.MAIL_WEBHOOK_TOKEN = '';
+// Deterministic links, so a test can assert the URL a recipient would click.
+process.env.APP_BASE_URL = 'http://localhost:5173';
+process.env.EMAIL_VERIFICATION_TTL_HOURS = '24';
+// One file is one process, but a suite still shares a single IP budget across
+// every signup, login and claim it makes. Generous here so a suite can only trip
+// it on purpose; the limiter itself is asserted nowhere in these suites.
+process.env.AUTH_RATE_LIMIT_MAX = '10000';
 
 const net = require('net');
 const jwt = require('jsonwebtoken');
@@ -83,12 +111,13 @@ async function stop() {
   if (io) io.close();
 }
 
-async function api(path, { method = 'GET', token, body } = {}) {
+async function api(path, { method = 'GET', token, body, headers } = {}) {
   const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
