@@ -25,6 +25,19 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  # The STUN codec behind `npm run check:turn` is checked against the published
+  # test vectors in RFC 5769. Neither the script nor its test has any
+  # dependencies, so this job needs no install step at all.
+  scripts:
+    name: Scripts (STUN test vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run test:scripts
+
   client:
     name: Client (lint + build)
     runs-on: ubuntu-latest

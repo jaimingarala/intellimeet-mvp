@@ -1,0 +1,46 @@
+# A coturn relay on this machine, so the TURN path can be proven end to end
+# without a paid account and without a second network.
+#
+#   npm run turn:up      start it
+#   npm run turn:logs    follow its log
+#   npm run turn:down    stop it
+#
+# Bridge networking with the listening port published, rather than
+# `network_mode: host`. Host networking would be tidier, but on Docker Desktop it
+# only works with Settings -> Resources -> Network -> Enable host networking
+# switched on, and without that it doesn't fail — coturn comes up, discovers only
+# the VM's addresses (192.168.65.x) and is simply unreachable from the host,
+# which is a miserable way for a demo to break. Published ports work everywhere.
+services:
+  coturn:
+    image: coturn/coturn:4.7.0
+    container_name: intellimeet-turn
+    # The image's entrypoint prepends `turnserver` when the first argument starts
+    # with a dash, so this runs:
+    #   turnserver -c /etc/coturn/turnserver.conf --external-ip=127.0.0.1
+    #
+    # --external-ip is what makes the bridge work at all. Without it coturn
+    # advertises the address it sees the client on — the container's own
+    # 172.17.x.x — as the *relay* address, which the browser cannot reach, so a
+    # call allocates successfully and then never connects. 127.0.0.1 is the right
+    # value while the browser is on this machine; for a relay other machines
+    # should use, put the address they can reach it on here, publish
+    # 49160-49200/udp as well, and point VITE_TURN_URLS at the same address.
+    command: ['-c', '/etc/coturn/turnserver.conf', '--external-ip=127.0.0.1']
+    # Only the listener is published, deliberately. In relay-only mode a browser
+    # never sends media straight to the other peer's relay address: it sends to
+    # its own allocation and the server forwards. Both allocations live in this
+    # one container, so the forwarding stays inside it and the relay port range
+    # never has to be reachable from the host.
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+    volumes:
+      # Read-only: the relay only reads this, and the image runs as `nobody`.
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    restart: unless-stopped
+
+# No healthcheck, on purpose. The questions worth asking here are "does an
+# authenticated allocation succeed?" and "is this the same credential the client
+# uses?" — which is what `npm run check:turn` answers. A healthcheck that only
+# proved the port was open would go green while the relay path was still broken.
