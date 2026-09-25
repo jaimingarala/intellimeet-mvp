@@ -42,6 +42,10 @@ process.env.EMAIL_VERIFICATION_TTL_HOURS = '24';
 // every signup, login and claim it makes. Generous here so a suite can only trip
 // it on purpose; the limiter itself is asserted nowhere in these suites.
 process.env.AUTH_RATE_LIMIT_MAX = '10000';
+// The server logs one line per request, which would bury 134 suites' output.
+// Off here, and `LOG_LEVEL=info npm test` turns it back on for a suite that is
+// about the logging itself (see test/observability.test.js, which flips it).
+process.env.LOG_LEVEL = 'silent';
 
 const net = require('net');
 const jwt = require('jsonwebtoken');
@@ -133,8 +137,8 @@ async function api(path, { method = 'GET', token, body, headers } = {}) {
 
 // Mirrors what routes/auth.js signs, so a test can mint a token for a user that
 // doesn't exist (useful for "outsider" cases) without a signup round trip.
-function tokenFor({ id, name = 'Test User', role = 'member' }) {
-  return jwt.sign({ sub: id, name, email: `${id}@test.dev`, role }, process.env.JWT_SECRET, {
+function tokenFor({ id, name = 'Test User' }) {
+  return jwt.sign({ sub: id, name, email: `${id}@test.dev` }, process.env.JWT_SECRET, {
     expiresIn: '1h',
   });
 }
@@ -154,4 +158,14 @@ async function createMeeting(token, title = 'Test meeting') {
   return res.body;
 }
 
-module.exports = { start, stop, api, tokenFor, signup, login, createMeeting, store, baseUrl: () => baseUrl };
+module.exports = {
+  start,
+  stop,
+  api,
+  tokenFor,
+  signup,
+  login,
+  createMeeting,
+  store,
+  baseUrl: () => baseUrl,
+};

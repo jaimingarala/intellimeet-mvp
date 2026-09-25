@@ -12,6 +12,8 @@
  * demoable without requiring paid infrastructure to run the MVP.
  */
 
+const { log } = require('../lib/logger');
+
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
 async function summarizeWithOpenAI(transcript) {
@@ -84,7 +86,9 @@ function splitSentences(text) {
 /** Naive TF-based extractive summary: scores sentences by frequent, non-trivial words. */
 function extractiveSummary(sentences, maxSentences = 4) {
   const stopwords = new Set(
-    'the a an and or but of to in on for with is are was were be been being this that it as at by from'.split(' ')
+    'the a an and or but of to in on for with is are was were be been being this that it as at by from'.split(
+      ' ',
+    ),
   );
   const freq = {};
   sentences.forEach((s) => {
@@ -98,7 +102,11 @@ function extractiveSummary(sentences, maxSentences = 4) {
   });
 
   const scored = sentences.map((s, idx) => {
-    const words = s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(' ').filter(Boolean);
+    const words = s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(' ')
+      .filter(Boolean);
     const score = words.reduce((sum, w) => sum + (freq[w] || 0), 0) / Math.max(words.length, 1);
     return { s, idx, score };
   });
@@ -145,7 +153,12 @@ async function summarizeMeeting(transcript) {
     try {
       return await summarizeWithOpenAI(cleaned);
     } catch (err) {
-      console.error('[aiService] OpenAI call failed, falling back to offline summarizer:', err.message);
+      // A warning, not an error: the request still succeeds, one rung down the
+      // ladder, and the response says which engine answered.
+      log.warn('OpenAI call failed, falling back to the offline summarizer', {
+        scope: 'aiService',
+        err: err.message,
+      });
       return summarizeOffline(cleaned);
     }
   }

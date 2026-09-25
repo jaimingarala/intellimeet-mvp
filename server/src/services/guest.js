@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { envFlag } = require('../config/deployment');
+const { log } = require('../lib/logger');
 const User = require('../models/User');
 const Meeting = require('../models/Meeting');
 const { buildDemoContent } = require('./demoContent');
@@ -41,7 +42,9 @@ function guestRoomTitle() {
 }
 
 function randomCode(length) {
-  return Array.from({ length }, () => NAME_ALPHABET[crypto.randomInt(NAME_ALPHABET.length)]).join('');
+  return Array.from({ length }, () => NAME_ALPHABET[crypto.randomInt(NAME_ALPHABET.length)]).join(
+    '',
+  );
 }
 
 // One shared "unusable" hash, computed lazily. Every guest gets it, and because
@@ -72,7 +75,11 @@ async function createGuestRoom(guest) {
   // maximum number of rooms, the oldest one nobody is in makes way first.
   const evicted = await evictOldestGuestRooms();
   if (evicted.rooms > 0) {
-    console.log(`[guest] at the ${evicted.cap}-room cap — evicted ${evicted.rooms} older demo room(s)`);
+    log.info('demo room cap reached — evicted older rooms', {
+      scope: 'guest/cap',
+      cap: evicted.cap,
+      evictedRooms: evicted.rooms,
+    });
   }
 
   let roomCode;

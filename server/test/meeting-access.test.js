@@ -53,7 +53,7 @@ describe('meeting access control', () => {
     assert.equal(
       [...res.body.roomCode.replace(/-/g, '')].every((char) => ALLOWED.includes(char)),
       true,
-      `room code used a character outside the documented alphabet: ${res.body.roomCode}`
+      `room code used a character outside the documented alphabet: ${res.body.roomCode}`,
     );
   });
 
@@ -104,9 +104,12 @@ describe('meeting access control', () => {
     assert.ok(hostList.body.length > 0);
     assert.equal(
       hostList.body.every((m) => m.host === host.user.id),
-      true
+      true,
     );
-    assert.equal(hostList.body.some((m) => m.title === 'Outsider only'), false);
+    assert.equal(
+      hostList.body.some((m) => m.title === 'Outsider only'),
+      false,
+    );
   });
 
   test('a room code can be looked up by any signed-in user (that is how people join)', async () => {
@@ -141,8 +144,7 @@ describe('meeting access control', () => {
       method: 'POST',
       token: host.token,
       body: {
-        transcript:
-          'We should ship the beta by Friday. Priya will write the release notes for it.',
+        transcript: 'We should ship the beta by Friday. Priya will write the release notes for it.',
       },
     });
 
@@ -152,7 +154,10 @@ describe('meeting access control', () => {
     assert.ok(res.body.summary.length > 0);
     assert.ok(res.body.actionItems.length >= 1);
     assert.ok(res.body.actionItems.some((item) => item.assignee === 'Priya'));
-    assert.equal(res.body.actionItems.every((item) => item.done === false), true);
+    assert.equal(
+      res.body.actionItems.every((item) => item.done === false),
+      true,
+    );
     // And it is persisted on the meeting, not just returned.
     assert.ok(doc.summary.length > 0);
     assert.equal(doc.transcript.includes('ship the beta'), true);
@@ -168,7 +173,10 @@ describe('meeting access control', () => {
     assert.equal(asParticipant.status, 403);
     assert.equal(doc.status, 'live');
 
-    const asHost = await api(`/api/meetings/${meeting._id}/end`, { method: 'POST', token: host.token });
+    const asHost = await api(`/api/meetings/${meeting._id}/end`, {
+      method: 'POST',
+      token: host.token,
+    });
     assert.equal(asHost.status, 200);
     assert.equal(asHost.body.status, 'ended');
     assert.ok(asHost.body.endedAt);
@@ -178,6 +186,10 @@ describe('meeting access control', () => {
     const res = await api('/api/definitely-not-a-route');
 
     assert.equal(res.status, 404);
-    assert.deepEqual(res.body, { error: 'Not found.' });
+    assert.equal(res.body.error, 'Not found.');
+    // The id is the whole point of the shape: the person who saw this 404 can
+    // quote it back and the matching log line can be found. Ids, and the other
+    // arms of the error handling, are covered in observability.test.js.
+    assert.match(res.body.requestId, /^[A-Za-z0-9-]{8,}$/);
   });
 });

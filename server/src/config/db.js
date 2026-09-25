@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const { log } = require('../lib/logger');
+
 async function connectDB() {
   const uri = process.env.MONGO_URI;
   if (!uri) {
@@ -7,7 +9,7 @@ async function connectDB() {
   }
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri);
-  console.log('[db] connected to MongoDB');
+  log.info('connected to MongoDB');
 }
 
 module.exports = connectDB;

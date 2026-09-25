@@ -22,6 +22,8 @@
 // Dev and test convenience: what would have been sent, so a suite (or you) can
 // follow the link without a mail server. Never recorded in production — these
 // are working credentials.
+const { log } = require('../lib/logger');
+
 const OUTBOX_LIMIT = 20;
 let outbox = [];
 
@@ -54,13 +56,21 @@ async function sendMail({ to, subject, text, link }) {
 
   if (!isMailerConfigured()) {
     if (isProduction()) {
-      console.warn(
-        `[mailer] MAIL_WEBHOOK_URL is not set — no mail sent to ${to}. ` +
-          'Verification links cannot be delivered on this deployment.'
+      log.warn(
+        'MAIL_WEBHOOK_URL is not set — no mail sent, verification links cannot be delivered',
+        {
+          scope: 'mailer',
+          // `to` is an address the user just typed; the link deliberately is not
+          // logged here, because in production a working link in a log is a
+          // credential anyone with log access can spend.
+          to,
+        },
       );
       return { delivered: false, transport: 'none' };
     }
-    console.log(`[mailer] no transport configured; would send to ${to}\n${text}`);
+    // Dev and test only: the body *is* printed here, because following the link
+    // locally is the point. Production returns above.
+    log.info('no mail transport configured; would have sent', { scope: 'mailer', to, text });
     record(message);
     return { delivered: true, transport: 'console' };
   }
@@ -77,13 +87,16 @@ async function sendMail({ to, subject, text, link }) {
       body: JSON.stringify({ to, subject, text, link }),
     });
     if (!res.ok) {
-      console.error(`[mailer] ${process.env.MAIL_WEBHOOK_URL} answered ${res.status} for ${to}`);
+      log.error('mail webhook rejected the message', {
+        scope: 'mailer',
+        status: res.status,
+      });
       return { delivered: false, transport: 'webhook', error: `HTTP ${res.status}` };
     }
     record(message);
     return { delivered: true, transport: 'webhook' };
   } catch (err) {
-    console.error('[mailer]', err.message);
+    log.error('mail webhook unreachable', { scope: 'mailer', err });
     return { delivered: false, transport: 'webhook', error: err.message };
   }
 }

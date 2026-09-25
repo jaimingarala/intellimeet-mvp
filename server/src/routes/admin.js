@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Meeting = require('../models/Meeting');
 const { getLiveSession } = require('../socket');
 const { deploymentSummary } = require('../config/deployment');
+const { log } = require('../lib/logger');
 const {
   purgeStaleGuests,
   getLastSweep,
@@ -64,7 +65,10 @@ async function buildStats() {
     live: { users: live.userIds.size, rooms: live.roomCodes.size },
     guests: guestIds.length,
     // How close the demo is to the volume bound that backs up the sweep.
-    rooms: { guest: await Meeting.countDocuments({ host: { $in: guestIds } }), cap: maxGuestRooms() },
+    rooms: {
+      guest: await Meeting.countDocuments({ host: { $in: guestIds } }),
+      cap: maxGuestRooms(),
+    },
     lastSweep: getLastSweep(),
   };
 }
@@ -75,7 +79,7 @@ router.get('/stats', async (req, res) => {
   try {
     return res.json(await buildStats());
   } catch (err) {
-    console.error('[admin/stats]', err);
+    log.error('stats failed', { scope: 'admin/stats', err });
     return res.status(500).json({ error: 'Could not read stats.' });
   }
 });
@@ -85,7 +89,7 @@ router.post('/sweep', async (req, res) => {
     const swept = await purgeStaleGuests();
     return res.json({ swept, stats: await buildStats() });
   } catch (err) {
-    console.error('[admin/sweep]', err);
+    log.error('sweep failed', { scope: 'admin/sweep', err });
     return res.status(500).json({ error: 'Could not run the sweep.' });
   }
 });

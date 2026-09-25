@@ -6,7 +6,14 @@ const helmet = require('helmet');
 const { Server } = require('socket.io');
 
 const connectDB = require('./config/db');
-const { logDeploymentWarnings, trustProxySetting } = require('./config/deployment');
+const { allowedOrigins, logDeploymentWarnings, trustProxySetting } = require('./config/deployment');
+const { log } = require('./lib/logger');
+const {
+  errorHandler,
+  notFoundHandler,
+  requestContext,
+  requestLogger,
+} = require('./middleware/observability');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
 const meetingRoutes = require('./routes/meetings');
@@ -16,7 +23,9 @@ const { startGuestRetention, retentionMs, intervalMs } = require('./services/gue
 const app = express();
 const server = http.createServer(app);
 
-const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',');
+// A wildcard is stripped here rather than passed to CORS — see
+// config/deployment.js `allowedOrigins`, which also warns about it at boot.
+const CLIENT_ORIGIN = allowedOrigins().origins;
 
 // Behind a platform proxy every request arrives *from* the proxy, so without
 // this `req.ip` is the proxy's address: the IP-keyed rate limiters then share
@@ -24,6 +33,11 @@ const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').spl
 // minutes is enough to stop the demo path answering. On by default in
 // production, overridable with TRUST_PROXY — see config/deployment.js.
 app.set('trust proxy', trustProxySetting());
+
+// Before everything else, so the id exists by the time anything can fail and the
+// timing covers the whole request.
+app.use(requestContext());
+app.use(requestLogger());
 
 app.use(helmet());
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -37,13 +51,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/admin', adminRoutes);
 
-// 404 + error handling
-app.use((req, res) => res.status(404).json({ error: 'Not found.' }));
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  console.error('[unhandled]', err);
-  res.status(500).json({ error: 'Internal server error.' });
-});
+// 404 + the single error handler: one shape for every failure, one log line for
+// every request, and a stack that stays in the log instead of the response.
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 const io = new Server(server, {
   cors: { origin: CLIENT_ORIGIN, credentials: true },
@@ -61,22 +72,21 @@ async function start() {
 
   await connectDB();
   server.listen(PORT, () => {
-    console.log(`[server] IntellMeet API + Socket.io listening on port ${PORT}`);
+    log.info('API + Socket.io listening', { port: Number(PORT) });
   });
 
   // Throwaway demo guests accumulate one user + one room per visit; sweep them.
   // Started after listen so tests can boot the real entry point without the
   // sweep querying their in-memory models (GUEST_RETENTION_ENABLED=false).
   if (startGuestRetention()) {
-    console.log(
-      `[guestRetention] guest data older than ${retentionMs() / 3_600_000}h is removed every ${
-        intervalMs() / 60_000
-      }min`
-    );
+    log.info('guest retention sweep started', {
+      olderThanHours: retentionMs() / 3_600_000,
+      everyMinutes: intervalMs() / 60_000,
+    });
   }
 }
 
 start().catch((err) => {
-  console.error('[server] failed to start:', err);
+  log.error('server failed to start', { err });
   process.exit(1);
 });

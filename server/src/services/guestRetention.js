@@ -1,4 +1,5 @@
 const { envFlag } = require('../config/deployment');
+const { log } = require('../lib/logger');
 const User = require('../models/User');
 const Meeting = require('../models/Meeting');
 const { getLiveSession } = require('../socket');
@@ -43,12 +44,18 @@ function positiveNumber(raw, fallback) {
 
 /** How long guest data is kept. */
 function retentionMs() {
-  return positiveNumber(process.env.GUEST_RETENTION_HOURS, DEFAULT_RETENTION_HOURS) * 60 * 60 * 1000;
+  return (
+    positiveNumber(process.env.GUEST_RETENTION_HOURS, DEFAULT_RETENTION_HOURS) * 60 * 60 * 1000
+  );
 }
 
 /** How often the sweep runs. */
 function intervalMs() {
-  return positiveNumber(process.env.GUEST_RETENTION_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES) * 60 * 1000;
+  return (
+    positiveNumber(process.env.GUEST_RETENTION_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES) *
+    60 *
+    1000
+  );
 }
 
 /** Enabled unless explicitly turned off. */
@@ -85,7 +92,7 @@ async function protectedGuestIds(staleGuests) {
   const protectedIds = new Set(
     staleGuests
       .filter((guest) => live.userIds.has(String(guest._id)))
-      .map((guest) => String(guest._id))
+      .map((guest) => String(guest._id)),
   );
 
   if (live.roomCodes.size > 0) {
@@ -147,7 +154,7 @@ async function removeGuests(ids) {
   const rooms = await Meeting.deleteMany({ host: { $in: ids } });
   const unseated = await Meeting.updateMany(
     { $or: [{ participants: { $in: ids } }, { banned: { $in: ids } }] },
-    { $pull: { participants: { $in: ids }, banned: { $in: ids } } }
+    { $pull: { participants: { $in: ids }, banned: { $in: ids } } },
   );
   await User.deleteMany({ _id: { $in: ids } });
 
@@ -182,7 +189,7 @@ async function evictOldestGuestRooms() {
 
   const live = getLiveSession();
   const evictable = rooms.filter(
-    (room) => !live.roomCodes.has(room.roomCode) && !live.userIds.has(String(room.host))
+    (room) => !live.roomCodes.has(room.roomCode) && !live.userIds.has(String(room.host)),
   );
   const doomedHosts = evictable.slice(0, excess).map((room) => room.host);
   if (doomedHosts.length === 0) return { guests: 0, rooms: 0, seats: 0, cap };
@@ -204,14 +211,18 @@ function startGuestRetention() {
     purgeStaleGuests()
       .then((result) => {
         if (result.guests > 0 || result.skipped > 0) {
-          console.log(
-            `[guestRetention] removed ${result.guests} guest(s), ${result.rooms} room(s), ` +
-              `${result.seats} seat(s)` +
-              (result.skipped > 0 ? `; kept ${result.skipped} still in a session` : '')
-          );
+          log.info('guest sweep', {
+            scope: 'guestRetention',
+            guestsRemoved: result.guests,
+            roomsRemoved: result.rooms,
+            seatsReleased: result.seats,
+            // Rooms someone is still sitting in are kept, which is worth saying
+            // out loud: otherwise "0 removed" looks like the sweep did nothing.
+            keptInSession: result.skipped,
+          });
         }
       })
-      .catch((err) => console.error('[guestRetention] sweep failed:', err));
+      .catch((err) => log.error('guest sweep failed', { scope: 'guestRetention', err }));
 
   run();
   const timer = setInterval(run, intervalMs());
