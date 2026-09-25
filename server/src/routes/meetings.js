@@ -7,7 +7,7 @@ const { log } = require('../lib/logger');
 const { requireAuth } = require('../middleware/auth');
 const { generateRoomCode } = require('../services/roomCode');
 const { summarizeMeeting } = require('../services/aiService');
-const { evictUserFromRoom, isBanned } = require('../socket');
+const { evictUserFromRoom, emitToRoom, isBanned } = require('../socket');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -259,6 +259,61 @@ router.post('/:id/summarize', requireMeetingAccess, summarizeLimiter, async (req
   } catch (err) {
     log.error('summarize failed', { scope: 'meetings/summarize', userId: req.user?.id, err });
     return res.status(500).json({ error: 'Could not generate summary.' });
+  }
+});
+
+// Tick an action item off, or put it back.
+//
+//   PATCH /api/meetings/:id/action-items/:index   { "done": true }
+//
+// Any member may, not just the host: an action item is a shared list and the
+// person who did the thing is usually not the one who ran the meeting.
+//
+// Items are addressed by position because the schema stores them without an id
+// (`_id: false`), and a re-summarize replaces the whole array — so a position is
+// only meaningful until the next summary, which is why the response hands the
+// entire list back rather than the one item that changed. The room is told over
+// the socket as well, so a board ticked mid-meeting doesn't look stale to
+// everyone else until they reload.
+router.patch('/:id/action-items/:index', requireMeetingAccess, async (req, res) => {
+  try {
+    const meeting = req.meeting;
+
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) {
+      return res.status(400).json({ error: 'Action item index must be a whole number.' });
+    }
+    if (!meeting.actionItems[index]) {
+      return res.status(404).json({ error: 'No action item at that position.' });
+    }
+
+    const { done } = req.body || {};
+    if (typeof done !== 'boolean') {
+      return res.status(400).json({ error: 'done must be true or false.' });
+    }
+
+    meeting.actionItems[index].done = done;
+    // Mongoose does track writes to a subdocument, but say it explicitly anyway:
+    // this array is replaced wholesale by the next summary, and a modification
+    // that went unnoticed would drop a tick without any error.
+    meeting.markModified?.('actionItems');
+    await meeting.save();
+
+    emitToRoom(meeting.roomCode, 'action-item-updated', {
+      index,
+      done,
+      actionItems: meeting.actionItems,
+      by: req.user.id,
+    });
+
+    return res.json({ index, actionItems: meeting.actionItems });
+  } catch (err) {
+    log.error('could not update action item', {
+      scope: 'meetings/action-items',
+      userId: req.user?.id,
+      err,
+    });
+    return res.status(500).json({ error: 'Could not update that action item.' });
   }
 });
 

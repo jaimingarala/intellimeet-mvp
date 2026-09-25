@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { MAX_TRANSCRIPT_CHARS } from '../lib/limits.js';
 
-export default function SummaryPanel({ onGenerate, summary, actionItems, engine }) {
+export default function SummaryPanel({ onGenerate, summary, actionItems, engine, onToggleItem }) {
   const [transcript, setTranscript] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -13,6 +13,9 @@ export default function SummaryPanel({ onGenerate, summary, actionItems, engine 
       setLoading(false);
     }
   }
+
+  const items = actionItems || [];
+  const done = items.filter((item) => item.done).length;
 
   return (
     <div>
@@ -48,16 +51,29 @@ export default function SummaryPanel({ onGenerate, summary, actionItems, engine 
         </div>
       )}
 
-      {actionItems && actionItems.length > 0 && (
+      {items.length > 0 && (
         <div>
           <span className="label" style={{ display: 'block', marginBottom: 6 }}>
             Action items
           </span>
-          {actionItems.map((item, i) => (
-            <div className="action-item" key={i}>
+          <div className="field-hint" style={{ marginBottom: 8 }}>
+            {onToggleItem
+              ? `${done} of ${items.length} done — ticking one off updates it for everyone in the room.`
+              : `${done} of ${items.length} done.`}
+          </div>
+          {items.map((item, i) => (
+            // The position is the item's only handle: the schema stores action
+            // items without an id, which is also why the server takes the index.
+            <label className={`action-item${item.done ? ' done' : ''}`} key={i}>
+              <input
+                type="checkbox"
+                checked={Boolean(item.done)}
+                disabled={!onToggleItem}
+                onChange={(e) => onToggleItem?.(i, e.target.checked)}
+              />
               <span className="assignee">{item.assignee}</span>
-              <span>{item.text}</span>
-            </div>
+              <span className="text">{item.text}</span>
+            </label>
           ))}
         </div>
       )}
