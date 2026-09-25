@@ -88,9 +88,9 @@ Docker or a `.env`. What is left is running it on GitHub rather than here.
 
 | ID | Task | Size | Spec ref |
 |---|---|---|---|
-| P3.1 | Screen sharing (`getDisplayMedia` + `replaceTrack` + a control button) | S | F-02, Day 12 |
-| P3.2 | Action-item tracking (checkable `done`, persisted; `done` already exists in the schema) | S | F-05 |
-| P3.3 | Dashboard search + export (Markdown/print) of summary, action items, chat | S | F-05 |
+| P3.1 | ✅ Screen sharing — `getDisplayMedia` swapped into the existing connection with `replaceTrack` (no renegotiation, no second stream), in place of the camera so a camera toggle during a share doesn't mute the screen. The room is told who is sharing, and a shared tile stops cropping. | S | F-02, Day 12 |
+| P3.2 | ✅ Action-item tracking — host *or* participant, by position, persisted, and broadcast to the room so a tick is live rather than a refresh away. | S | F-05 |
+| P3.3 | ✅ Dashboard search over the fields the row shows, and a Markdown export of a meeting's summary, action items and chat. | S | F-05 |
 | P3.4 | Shared notes + typing indicators | M | F-04, Day 11 |
 | P3.5 | `@mention` notifications in chat | M | Day 20 |
 | P3.6 | Recording (canvas-composited `MediaRecorder` → WebM download) | M | F-02, Day 12 |
@@ -103,8 +103,17 @@ differentiator worth a demo segment, so it is the headline feature of this phase
 P3.9 is deliberately placed last and must stay optional/flagged: Whisper needs a
 paid key or a GPU, which conflicts with the no-paid-deps rule.
 
+**Still to do in this phase:** P3.4 (shared notes + typing indicators), P3.5
+(`@mention` notifications), P3.6 (recording), P3.7 (the F-06 headline) and P3.8
+(analytics) — plus P3.9 last, and only if it stays clearly optional.
+
 **Gate C:** features frozen; each item works in the deployed demo and has a test
-where the logic is non-trivial.
+where the logic is non-trivial. The three landed items each carry tests where the
+logic is theirs — the action-item route and the `media-state` relay in the server
+suite, the track-swapping and the Markdown/Search helpers in vitest — and were
+rehearsed in a browser against the local stack (tick a box, reload, it is still
+ticked; mute in one guest, the other guest's tile says so). The deployed-demo
+half of the gate is still the deploy itself.
 
 ## Phase 4 — Documentation & presentation  ·  20% + 10%
 

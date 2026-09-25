@@ -17,9 +17,10 @@ one person can actually run and demo:
 | JWT auth, signup/login | ✅ Full |
 | One-click demo (no sign-up) | ✅ Anonymous guests, one per visitor, each with their own room or joining by link. A guest can later **claim** the session to keep what it built; the address it attaches is verified by email before it can sign in. |
 | Real-time video (WebRTC) | ✅ Mesh peer-to-peer, good for small rooms (2–6 people). Not SFU-based, so it won't scale to 50+ participants — that needs a media server (mediasoup/LiveKit), noted below as a next step. |
+| Screen sharing | ✅ Full screen, a window or a tab, switched into the existing connection with `replaceTrack` — no renegotiation and no second stream. The tile stops cropping, so a shared slide isn't cut off at the sides, and the room is told who is sharing. |
 | Real-time chat | ✅ Full, via Socket.io, persisted per meeting |
-| AI meeting intelligence | ✅ Real feature, not a mock: paste a transcript (or leave it blank to summarize the chat log) and get a summary + action items. Uses OpenAI if you set `OPENAI_API_KEY`; otherwise falls back to a free, offline extractive summarizer so the whole app runs with zero API cost. |
-| Post-meeting dashboard | ✅ Meeting history, status, revisit summaries |
+| AI meeting intelligence | ✅ Real feature, not a mock: paste a transcript (or leave it blank to summarize the chat log) and get a summary + action items. Uses OpenAI if you set `OPENAI_API_KEY`; otherwise falls back to a free, offline extractive summarizer so the whole app runs with zero API cost. Action items are tickable by anyone in the room, and the tick reaches everyone live. |
+| Post-meeting dashboard | ✅ Meeting history with a search box, and any meeting exports to Markdown — summary, action items, chat — for a report or a standup. |
 | Host moderation (remove/ban) | ✅ Host-only endpoint; removing a participant also closes their socket so their video tile drops for everyone. A ban is stored on the meeting, so it survives a reload or reconnect. |
 | Team workspaces / Kanban boards | ❌ Not in this MVP — separate feature, next milestone |
 | Analytics dashboard | ❌ Not in this MVP |
@@ -404,6 +405,37 @@ The difference between the two modes matters:
 - **Ban** is recorded in the meeting's `banned` list. It is checked when a
   socket joins, when the room is looked up, and when chat is posted, so a banned
   user stays out across reloads, new tabs, and server restarts.
+
+## Action items
+
+An action item is a shared list, not the host's private notes: any member of the
+meeting can tick one off, and everyone else sees it immediately.
+
+```bash
+# Tick an item off (or put it back). Position 0 is the first item in the list.
+curl -X PATCH http://localhost:5000/api/meetings/<meetingId>/action-items/0 \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"done": true}'
+```
+
+Items are addressed by position because the schema stores them without an id, and
+a re-summarize replaces the whole array — which is why the response returns the
+entire list rather than the one item that changed, and why a position means
+"until the next summary". A non-member gets a `403`, a position with nothing at it
+a `404`, and `done` has to be a boolean rather than a truthy string.
+
+The change is broadcast to the room as `action-item-updated`, so a checklist
+ticked during the meeting doesn't look stale to everyone else until they reload.
+
+## What the tiles know
+
+`media-state` is the one socket event that carries no meeting data: a client says
+whether its mic is on, whether its camera is on and whether it is sharing its
+screen, and the other sockets in the room use that to label the tiles. It exists
+because a remote track carries no display surface — without it a screen share
+looks like a webcam and a muted participant looks like a quiet one. Everyone
+already in the room repeats their state when someone joins, so a newcomer's tiles
+are right on the first paint rather than after the first mute.
 
 ## Limits and abuse protection
 
