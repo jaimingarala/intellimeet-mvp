@@ -528,6 +528,10 @@ both packages against a coverage floor, checks formatting with Prettier, builds
 the client, and re-runs the STUN test vectors. Nothing in it needs a database,
 Docker, or a paid account.
 
+Each test job also publishes its counts and coverage percentages — beside the
+floor enforcing them — into the run's summary page, so the numbers can be read
+without an authenticated log download, including on a failing run.
+
 ## Scaling up from here (in priority order)
 
 1. **SFU for video** — swap the WebRTC mesh for a media server (LiveKit,

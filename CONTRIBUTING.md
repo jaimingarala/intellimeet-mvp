@@ -128,6 +128,22 @@ figure CI prints is enforced rather than decorative. Everything here is also
 available from the root: `npm run lint`, `npm run test`, `npm run format`,
 `npm run build`.
 
+Every test job `tee`s its output and then publishes a summary of it — test count,
+failures by name, and coverage next to the floor that enforces it — to the run
+page. GitHub serves job *logs* only to an authenticated request, so this is how
+the numbers are readable by anyone with the link, and it is written even when the
+job is red, which is when you want it. To render the same block locally:
+
+```bash
+npm --prefix client run test:coverage > /tmp/client.log 2>&1
+node scripts/ci-summary.mjs client /tmp/client.log
+```
+
+The first argument is `server`, `client` or `scripts` — whichever job's output you
+captured. Vitest still colours that log even when it is a file, which is why the
+script strips ANSI escapes before parsing; a full log that has no summary line in
+it says so instead of reporting zero tests.
+
 Two things that trip people up:
 
 - The server suites boot the **real** `src/index.js` with the Mongoose models
@@ -163,7 +179,10 @@ Two things that trip people up:
   supplies the two WebRTC globals Node doesn't have.
 - **Scripts**: `node:test` again, under `scripts/test/`. Today that is the STUN
   codec behind `npm run check:turn`, pinned to the published test vectors in
-  RFC 5769. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is
+  RFC 5769, and `ci-summary.mjs`, which parses each job's output for the run
+  page — its fixtures are captured runner output, including the ANSI-styled
+  lines Vitest writes when its output is piped, which is the case that only
+  showed up against a real log. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is
   subtly wrong still looks fine locally and fails against every real server, so
   the check would report a network problem that doesn't exist. Those tests are
   dependency-free, which is why CI runs them without an install step.
