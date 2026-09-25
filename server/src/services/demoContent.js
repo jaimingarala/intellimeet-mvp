@@ -19,12 +19,36 @@
 // `minutesAgo` keeps the log looking like it just wrapped up rather than a
 // conversation frozen at some fixed date.
 const DEMO_CHAT = [
-  { senderName: 'Maya', minutesAgo: 16, text: 'Morning! Quick sync on the beta launch — target is still Thursday.' },
-  { senderName: 'Devin', minutesAgo: 13, text: "Landing page copy is done. I'm waiting on the final screenshots." },
-  { senderName: 'Priya', minutesAgo: 12, text: "Screenshots are ready — I'll add them to the shared folder after standup." },
-  { senderName: 'Maya', minutesAgo: 6, text: 'If they land today, are we still comfortable with Thursday?' },
-  { senderName: 'Devin', minutesAgo: 4, text: "Yes. I'll do one last pass on the onboarding flow tonight." },
-  { senderName: 'Priya', minutesAgo: 2, text: "Agreed. I'll set up the feedback form so we can collect early responses." },
+  {
+    senderName: 'Maya',
+    minutesAgo: 16,
+    text: 'Morning! Quick sync on the beta launch — target is still Thursday.',
+  },
+  {
+    senderName: 'Devin',
+    minutesAgo: 13,
+    text: "Landing page copy is done. I'm waiting on the final screenshots.",
+  },
+  {
+    senderName: 'Priya',
+    minutesAgo: 12,
+    text: "Screenshots are ready — I'll add them to the shared folder after standup.",
+  },
+  {
+    senderName: 'Maya',
+    minutesAgo: 6,
+    text: 'If they land today, are we still comfortable with Thursday?',
+  },
+  {
+    senderName: 'Devin',
+    minutesAgo: 4,
+    text: "Yes. I'll do one last pass on the onboarding flow tonight.",
+  },
+  {
+    senderName: 'Priya',
+    minutesAgo: 2,
+    text: "Agreed. I'll set up the feedback form so we can collect early responses.",
+  },
 ];
 
 const DEMO_TRANSCRIPT = [

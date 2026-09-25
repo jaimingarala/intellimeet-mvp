@@ -149,7 +149,8 @@ export default function AuthPage({ mode }) {
           {guestLoading ? 'Opening your demo room…' : 'Try the demo — no sign-up'}
         </button>
         <p className="demo-note">
-          Opens your own guest room with video, chat and AI summaries. Share the link to invite someone.
+          Opens your own guest room with video, chat and AI summaries. Share the link to invite
+          someone.
         </p>
 
         <div className="form-switch">

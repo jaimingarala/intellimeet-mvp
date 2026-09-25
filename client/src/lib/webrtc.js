@@ -57,7 +57,9 @@ export function hasTurnConfigured() {
  * path is cheaper and lower latency; `relay` requires working TURN credentials.
  */
 export function getIceTransportPolicy() {
-  const raw = String(import.meta.env.VITE_ICE_TRANSPORT_POLICY || '').trim().toLowerCase();
+  const raw = String(import.meta.env.VITE_ICE_TRANSPORT_POLICY || '')
+    .trim()
+    .toLowerCase();
   return raw === 'relay' ? 'relay' : 'all';
 }
 

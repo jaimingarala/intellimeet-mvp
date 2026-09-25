@@ -22,7 +22,7 @@ const token = process.env.ADMIN_TOKEN;
 
 if (!token) {
   console.error(
-    '[sweep:guests] ADMIN_TOKEN is not set (see server/.env.example) — the admin endpoint is off without it.'
+    '[sweep:guests] ADMIN_TOKEN is not set (see server/.env.example) — the admin endpoint is off without it.',
   );
   process.exit(1);
 }

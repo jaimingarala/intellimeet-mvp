@@ -6,7 +6,9 @@ const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no confusing chars (0/o, 
  */
 function generateRoomCode() {
   const part = (len) =>
-    Array.from({ length: len }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+    Array.from({ length: len }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join(
+      '',
+    );
   return `${part(3)}-${part(4)}-${part(3)}`;
 }
 

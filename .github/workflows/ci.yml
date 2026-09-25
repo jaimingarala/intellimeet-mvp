@@ -6,10 +6,11 @@ on:
   pull_request:
 
 # The server suites boot the real app with the Mongoose models stubbed, so CI
-# needs no database service.
+# needs no database service — which is the point: a fresh clone can verify this
+# project without Atlas, Docker or a paid account.
 jobs:
   server:
-    name: Server (lint + test)
+    name: Server (lint + test + coverage)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,7 +24,26 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      # `test:coverage` is `npm test` plus the report, and it exits non-zero
+      # below a floor, so the number this job prints is enforced rather than
+      # decorative.
+      - run: npm run test:coverage
+
+  # One Prettier config at the repository root covers both packages *and* the
+  # root scripts, so there is a single source of truth for style instead of two
+  # that can disagree.
+  format:
+    name: Format (prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run format:check
 
   # The STUN codec behind `npm run check:turn` is checked against the published
   # test vectors in RFC 5769. Neither the script nor its test has any
@@ -39,7 +59,7 @@ jobs:
       - run: npm run test:scripts
 
   client:
-    name: Client (lint + build)
+    name: Client (lint + test + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,4 +73,7 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # Vitest, scoped to `src/lib` — the client's WebRTC helpers and the caps it
+      # mirrors from the server. `environment: node`, no browser needed.
+      - run: npm run test:coverage
       - run: npm run build

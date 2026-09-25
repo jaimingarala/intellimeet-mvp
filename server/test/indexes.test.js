@@ -18,14 +18,14 @@ const indexKeys = (model) =>
     Object.keys(spec)
       .sort()
       .map((field) => `${field}:${spec[field]}`)
-      .join(',')
+      .join(','),
   );
 
 describe('retention indexes', () => {
   test('users are indexed for the guest sweep filter', () => {
     assert.ok(
       indexKeys(User).includes('createdAt:1,isGuest:1'),
-      'User needs a compound { isGuest, createdAt } index, or the sweep scans every account'
+      'User needs a compound { isGuest, createdAt } index, or the sweep scans every account',
     );
   });
 
@@ -36,7 +36,7 @@ describe('retention indexes', () => {
     assert.equal(
       spec[1].sparse,
       true,
-      'sparse matters: an ordinary index would store a null entry for every user with nothing pending'
+      'sparse matters: an ordinary index would store a null entry for every user with nothing pending',
     );
   });
 

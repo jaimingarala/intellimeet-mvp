@@ -7,7 +7,7 @@ const chatMessageSchema = new mongoose.Schema(
     text: { type: String, required: true },
     sentAt: { type: Date, default: Date.now },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const actionItemSchema = new mongoose.Schema(
@@ -16,7 +16,7 @@ const actionItemSchema = new mongoose.Schema(
     assignee: { type: String, default: 'Unassigned' },
     done: { type: Boolean, default: false },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const meetingSchema = new mongoose.Schema(
@@ -37,7 +37,7 @@ const meetingSchema = new mongoose.Schema(
     summary: { type: String, default: '' },
     actionItems: [actionItemSchema],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // The retention sweep's three lookups: the rooms a deleted guest hosted, and

@@ -91,10 +91,13 @@ describe('claiming a guest session', () => {
     const result = await purgeStaleGuests();
 
     assert.equal(result.guests, 0);
-    assert.ok(store.users.some((u) => String(u._id) === String(user.id)), 'the claimed account survives');
+    assert.ok(
+      store.users.some((u) => String(u._id) === String(user.id)),
+      'the claimed account survives',
+    );
     assert.ok(
       store.meetings.some((m) => m.roomCode === roomCode),
-      'and so does the room it owns'
+      'and so does the room it owns',
     );
   });
 

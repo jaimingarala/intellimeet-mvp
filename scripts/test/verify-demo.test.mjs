@@ -41,7 +41,13 @@ function createApi({ allowedOrigin, demoStatus = 200, seeded = true } = {}) {
 
     if (url.pathname === '/api/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'intellimeet-api', time: new Date().toISOString() }));
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          service: 'intellimeet-api',
+          time: new Date().toISOString(),
+        }),
+      );
       return;
     }
 
@@ -62,7 +68,12 @@ function createApi({ allowedOrigin, demoStatus = 200, seeded = true } = {}) {
           roomCode,
           title: 'IntellMeet live demo',
           participants: [],
-          chatMessages: seeded ? [{ senderName: 'Guest', text: 'hi' }, { senderName: 'Guest', text: 'there' }] : [],
+          chatMessages: seeded
+            ? [
+                { senderName: 'Guest', text: 'hi' },
+                { senderName: 'Guest', text: 'there' },
+              ]
+            : [],
           summary: seeded ? 'A short demo meeting.' : '',
           actionItems: seeded ? [{ text: 'Ship it', assignee: 'Unassigned', done: false }] : [],
         };
@@ -78,7 +89,9 @@ function createApi({ allowedOrigin, demoStatus = 200, seeded = true } = {}) {
       const roomCode = url.pathname.split('/').pop();
       const room = rooms.get(roomCode);
       if (!room) {
-        res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'no room' }));
+        res
+          .writeHead(404, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ error: 'no room' }));
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -86,7 +99,9 @@ function createApi({ allowedOrigin, demoStatus = 200, seeded = true } = {}) {
       return;
     }
 
-    res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Not found.' }));
+    res
+      .writeHead(404, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: 'Not found.' }));
   });
 
   return { server, state };
@@ -107,7 +122,9 @@ function createClient({ deepLinks = true } = {}) {
 }
 
 function listen(server) {
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
+  return new Promise((resolve) =>
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port)),
+  );
 }
 
 function run(args) {
@@ -160,8 +177,14 @@ test('a deployment that works passes every check', async () => {
   assert.match(stdout, /✓ health\s+200 in/);
   assert.match(stdout, /✓ cors\s+preflight allowed http:\/\/127\.0\.0\.1:\d+ with credentials/);
   assert.match(stdout, /✓ demo\s+one click provisioned a guest in room abcd-2345/);
-  assert.match(stdout, /✓ seeded\s+the room arrives populated: 2 chat message\(s\), a summary, 1 action item\(s\)/);
-  assert.match(stdout, /✓ link\s+a second visitor joined the same room with no account \(1 → 2 participants\)/);
+  assert.match(
+    stdout,
+    /✓ seeded\s+the room arrives populated: 2 chat message\(s\), a summary, 1 action item\(s\)/,
+  );
+  assert.match(
+    stdout,
+    /✓ link\s+a second visitor joined the same room with no account \(1 → 2 participants\)/,
+  );
   assert.match(stdout, /✓ client\s+\/room\/abcd-2345 served the app shell/);
   assert.match(stdout, /6 of 6 checks passed/);
 
@@ -171,10 +194,15 @@ test('a deployment that works passes every check', async () => {
 });
 
 test('an origin the API does not allow is reported as CLIENT_ORIGIN, not as a CORS error', async () => {
-  const { code, stdout } = await verifyAgainst({ api: { allowedOrigin: 'https://elsewhere.example' } });
+  const { code, stdout } = await verifyAgainst({
+    api: { allowedOrigin: 'https://elsewhere.example' },
+  });
 
   assert.equal(code, 1);
-  assert.match(stdout, /✗ cors\s+the API answered 204 but allowed "https:\/\/elsewhere\.example" instead of/);
+  assert.match(
+    stdout,
+    /✗ cors\s+the API answered 204 but allowed "https:\/\/elsewhere\.example" instead of/,
+  );
   assert.match(stdout, /→ set CLIENT_ORIGIN on the API to http:\/\/127\.0\.0\.1:\d+/);
 });
 
@@ -202,7 +230,10 @@ test('a guest room that arrives empty is reported as the seeded content', async 
   const { code, stdout } = await verifyAgainst({ api: { seeded: false } });
 
   assert.equal(code, 1);
-  assert.match(stdout, /✗ seeded\s+the room arrived with 0 chat message\(s\), 0 action item\(s\) and no summary/);
+  assert.match(
+    stdout,
+    /✗ seeded\s+the room arrived with 0 chat message\(s\), 0 action item\(s\) and no summary/,
+  );
   assert.match(stdout, /services\/demoContent\.js/);
 });
 
@@ -241,6 +272,6 @@ test('--json carries the same verdict for a script to read', async () => {
   assert.equal(report.steps.length, 6);
   assert.deepEqual(
     report.steps.map((s) => s.name),
-    ['health', 'cors', 'demo', 'seeded', 'link', 'client']
+    ['health', 'cors', 'demo', 'seeded', 'link', 'client'],
   );
 });

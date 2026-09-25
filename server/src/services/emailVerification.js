@@ -148,7 +148,9 @@ async function consumeVerification(token) {
  * cases — an endpoint that distinguishes them is an account-existence oracle.
  */
 async function resendVerification(email) {
-  const normalised = String(email || '').toLowerCase().trim();
+  const normalised = String(email || '')
+    .toLowerCase()
+    .trim();
   if (!normalised) return { sent: false, reason: 'unknown' };
 
   const user = await User.findOne({ email: normalised });

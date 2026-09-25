@@ -169,10 +169,15 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span className={`status-pill ${m.status === 'ended' ? 'status-ended' : 'status-live'}`}>
+                    <span
+                      className={`status-pill ${m.status === 'ended' ? 'status-ended' : 'status-live'}`}
+                    >
                       {m.status}
                     </span>
-                    <button className="btn btn-secondary" onClick={() => navigate(`/room/${m.roomCode}`)}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => navigate(`/room/${m.roomCode}`)}
+                    >
                       {m.status === 'ended' ? 'View' : 'Rejoin'}
                     </button>
                   </div>

@@ -85,7 +85,13 @@ function respondTo(request) {
 function runChecker(args) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [checker, ...args], {
-      env: { ...process.env, NO_COLOR: '1', VITE_TURN_URLS: '', VITE_TURN_USERNAME: '', VITE_TURN_CREDENTIAL: '' },
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+        VITE_TURN_URLS: '',
+        VITE_TURN_USERNAME: '',
+        VITE_TURN_CREDENTIAL: '',
+      },
     });
     let stdout = '';
     child.stdout.on('data', (chunk) => (stdout += chunk));
@@ -142,7 +148,7 @@ test('reads and writes unframed STUN over TCP, and understands the reply', async
       [0x0003, 0x0003],
       `expected the unauthenticated Allocate and its authenticated retry, got ${firstBytes
         .map((type) => `0x${type.toString(16)}`)
-        .join(', ')}`
+        .join(', ')}`,
     );
 
     // The relay never authenticates anyone, so the run is expected to fail. The

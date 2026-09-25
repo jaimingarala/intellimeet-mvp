@@ -57,9 +57,7 @@ export default function ClaimAccount() {
           <button className="btn btn-primary" onClick={() => navigate('/')}>
             Back to my meetings
           </button>
-          <div className="form-switch">
-            Didn&apos;t get it? Ask again from your dashboard.
-          </div>
+          <div className="form-switch">Didn&apos;t get it? Ask again from your dashboard.</div>
         </div>
       </div>
     );

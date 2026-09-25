@@ -242,7 +242,7 @@ async function ensureMongo(uri) {
     say(
       `${color.mongo('mongo')} using the MongoDB from server/.env (remote${
         mongo.host ? `: ${mongo.host}` : ''
-      })`
+      })`,
     );
     return;
   }
@@ -255,7 +255,9 @@ async function ensureMongo(uri) {
   const mongod = findMongod();
   if (!mongod) {
     say('');
-    say(`✖ MongoDB isn't reachable at ${mongo.host}:${mongo.port}, and no \`mongod\` binary was found.`);
+    say(
+      `✖ MongoDB isn't reachable at ${mongo.host}:${mongo.port}, and no \`mongod\` binary was found.`,
+    );
     say('  Either start MongoDB (or the "MongoDB Server" service), or point MONGO_URI in');
     say('  server/.env at a hosted cluster (e.g. MongoDB Atlas).');
     say('');
@@ -291,13 +293,15 @@ async function ensureMongo(uri) {
     say(
       `${color.warn('!')} mongod did not start listening within 30s — see ${path.relative(
         root,
-        mongodLog
-      )}`
+        mongodLog,
+      )}`,
     );
     shutdown(1);
     return;
   }
-  say(`${color.mongo('mongo')} mongod ready ${color.dim(`(log: ${path.relative(root, mongodLog)})`)}`);
+  say(
+    `${color.mongo('mongo')} mongod ready ${color.dim(`(log: ${path.relative(root, mongodLog)})`)}`,
+  );
 }
 
 // --- preflight ---------------------------------------------------------------
@@ -340,10 +344,11 @@ async function main() {
   if (process.env.PORT !== undefined && !parsePort(process.env.PORT)) {
     say(
       `${color.warn('!')} ignoring PORT=${process.env.PORT} from the shell — the client has to be ` +
-        'told a specific port, so the launcher picks one it can name'
+        'told a specific port, so the launcher picks one it can name',
     );
   }
-  const preferredApiPort = parsePort(process.env.PORT) ?? parsePort(fileEnv.PORT) ?? DEFAULT_API_PORT;
+  const preferredApiPort =
+    parsePort(process.env.PORT) ?? parsePort(fileEnv.PORT) ?? DEFAULT_API_PORT;
   const preferredWebPort = parsePort(fileEnv.WEB_PORT) ?? DEFAULT_WEB_PORT;
 
   await ensureMongo(mongoUri);
@@ -369,7 +374,12 @@ async function main() {
     label: 'web',
     tag: color.web,
     command: process.execPath,
-    args: [path.join(clientDir, 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(webPort), '--strictPort'],
+    args: [
+      path.join(clientDir, 'node_modules', 'vite', 'bin', 'vite.js'),
+      '--port',
+      String(webPort),
+      '--strictPort',
+    ],
     cwd: clientDir,
     env: { VITE_API_URL: apiOrigin },
   });
@@ -386,7 +396,7 @@ async function main() {
   say(
     `  ${color.dim('MongoDB')}  ${
       mongoUri ? mongoUri.replace(/\/\/[^@]*@/, '//***@').replace(/\?.*$/, '') : 'not configured'
-    }`
+    }`,
   );
   say(`  ${color.dim('─'.repeat(46))}`);
   say(`  ${color.ok('ready')} ${color.dim('— press Ctrl+C to stop everything')}`);

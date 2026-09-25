@@ -129,7 +129,10 @@ describe('socket protocol: join, chat relay and moderation events', () => {
     sock.emit('join-room', { roomCode: 'NOPE-00' });
 
     assert.match((await error).error, /Room not found/i);
-    assert.deepEqual(store.meetings.map((m) => m.participants.length), before);
+    assert.deepEqual(
+      store.meetings.map((m) => m.participants.length),
+      before,
+    );
     sock.disconnect();
   });
 

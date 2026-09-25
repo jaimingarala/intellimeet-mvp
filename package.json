@@ -14,10 +14,15 @@
     "check:turn": "node scripts/check-turn.mjs",
     "verify:demo": "node scripts/verify-demo.mjs",
     "test:scripts": "node --test \"scripts/test/*.test.mjs\"",
-    "setup": "npm --prefix server ci && npm --prefix client ci",
-    "test": "npm --prefix server test",
-    "test:coverage": "npm --prefix server run test:coverage",
+    "setup": "npm ci && npm --prefix server ci && npm --prefix client ci",
+    "test": "npm --prefix server test && npm --prefix client test",
+    "test:coverage": "npm --prefix server run test:coverage && npm --prefix client run test:coverage",
     "lint": "npm --prefix server run lint && npm --prefix client run lint",
+    "format": "prettier --write . .github",
+    "format:check": "prettier --check . .github",
     "build": "npm --prefix client run build"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
   }
 }

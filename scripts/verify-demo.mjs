@@ -55,7 +55,10 @@ function fail(message) {
  * to report is usually *how* it failed, and an exception with a stack trace is
  * how that gets lost.
  */
-async function request(url, { method = 'GET', headers = {}, body, timeoutMs, redirect = 'follow' } = {}) {
+async function request(
+  url,
+  { method = 'GET', headers = {}, body, timeoutMs, redirect = 'follow' } = {},
+) {
   const started = Date.now();
   try {
     const res = await fetch(url, {
@@ -76,7 +79,14 @@ async function request(url, { method = 'GET', headers = {}, body, timeoutMs, red
       // Not everything answers JSON — the client host answers HTML, which is the
       // point of the last check.
     }
-    return { ok: true, status: res.status, headers: res.headers, text, json, ms: Date.now() - started };
+    return {
+      ok: true,
+      status: res.status,
+      headers: res.headers,
+      text,
+      json,
+      ms: Date.now() - started,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -104,7 +114,7 @@ function connectionHint(response) {
     return `the hostname did not resolve (${code}) — check the URL for a typo, and whether the service exists yet`;
   }
   if (code === 'ECONNREFUSED') {
-    return 'nothing is listening there (ECONNREFUSED) — check the URL and port against the host\'s dashboard';
+    return "nothing is listening there (ECONNREFUSED) — check the URL and port against the host's dashboard";
   }
   if (/CERT|TLS|SSL/i.test(everything)) {
     return `the TLS handshake failed (${detail}) — check the service URL rather than the certificate`;
@@ -136,7 +146,10 @@ function readEnvFile(file) {
   return env;
 }
 
-const trimSlash = (value) => String(value ?? '').trim().replace(/\/+$/, '');
+const trimSlash = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/\/+$/, '');
 
 /** An empty environment variable has to fall through to the next source, not win. */
 const firstNonEmpty = (...values) => values.find((value) => trimSlash(value) !== '') ?? '';
@@ -169,8 +182,21 @@ Usage: npm run verify:demo [options]
 `;
 
 function parseArgs(argv) {
-  const options = { api: null, client: null, origin: null, timeoutMs: 20000, targetMs: 5000, json: false };
-  const takesValue = { '--api': 'api', '--client': 'client', '--origin': 'origin', '--timeout': 'timeoutMs', '--target': 'targetMs' };
+  const options = {
+    api: null,
+    client: null,
+    origin: null,
+    timeoutMs: 20000,
+    targetMs: 5000,
+    json: false,
+  };
+  const takesValue = {
+    '--api': 'api',
+    '--client': 'client',
+    '--origin': 'origin',
+    '--timeout': 'timeoutMs',
+    '--target': 'targetMs',
+  };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -195,8 +221,10 @@ function parseArgs(argv) {
 
   options.timeoutMs = Number(options.timeoutMs);
   options.targetMs = Number(options.targetMs);
-  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) fail('--timeout must be a positive number of milliseconds');
-  if (!Number.isFinite(options.targetMs) || options.targetMs <= 0) fail('--target must be a positive number of milliseconds');
+  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+    fail('--timeout must be a positive number of milliseconds');
+  if (!Number.isFinite(options.targetMs) || options.targetMs <= 0)
+    fail('--target must be a positive number of milliseconds');
   return options;
 }
 
@@ -248,20 +276,30 @@ async function checkHealth(api, options) {
             response.status === 502 || response.status === 503
               ? 'the process is up but not ready: usually MONGO_URI (wrong string, or Atlas Network Access not allowing 0.0.0.0/0 for Render) — read the Render logs'
               : 'check the Render logs; the deploy may have failed or be mid-restart',
-        }
-      )
+        },
+      ),
     );
     return steps;
   }
 
   const body = response.json;
   if (!body || body.status !== 'ok') {
-    steps.push(step('health', false, `200 but the body is not a health payload: ${response.text.slice(0, 120)}`));
+    steps.push(
+      step(
+        'health',
+        false,
+        `200 but the body is not a health payload: ${response.text.slice(0, 120)}`,
+      ),
+    );
     return steps;
   }
   if (body.service !== 'intellimeet-api') {
     steps.push(
-      step('health', false, `200 from "${body.service ?? 'an unnamed service'}" — this URL is not the IntelliMeet API`)
+      step(
+        'health',
+        false,
+        `200 from "${body.service ?? 'an unnamed service'}" — this URL is not the IntelliMeet API`,
+      ),
     );
     return steps;
   }
@@ -279,8 +317,8 @@ async function checkHealth(api, options) {
         ? {
             hint: `slower than the ${options.targetMs / 1000}s target, which reads as a broken app to a first-time visitor: set DEMO_API_URL so .github/workflows/keepalive.yml pings it every 10 minutes, or point a free external pinger at it`,
           }
-        : {}
-    )
+        : {},
+    ),
   );
   return steps;
 }
@@ -288,7 +326,9 @@ async function checkHealth(api, options) {
 /** The preflight a browser sends before a cross-origin POST, with the client's origin. */
 async function checkCors(api, origin, options) {
   if (!origin) {
-    return [step('cors', false, 'no origin to test with — pass --origin or --client', { soft: true })];
+    return [
+      step('cors', false, 'no origin to test with — pass --origin or --client', { soft: true }),
+    ];
   }
 
   const response = await request(`${api}/api/auth/demo`, {
@@ -310,9 +350,14 @@ async function checkCors(api, origin, options) {
 
   if (allowed !== origin) {
     return [
-      step('cors', false, `the API answered ${response.status} but allowed "${allowed ?? 'nothing'}" instead of ${origin}`, {
-        hint: `set CLIENT_ORIGIN on the API to ${origin} — exactly, no trailing slash, comma-separated for more than one — and redeploy. It is sync:false in render.yaml, so it is set in the dashboard, not the file.`,
-      }),
+      step(
+        'cors',
+        false,
+        `the API answered ${response.status} but allowed "${allowed ?? 'nothing'}" instead of ${origin}`,
+        {
+          hint: `set CLIENT_ORIGIN on the API to ${origin} — exactly, no trailing slash, comma-separated for more than one — and redeploy. It is sync:false in render.yaml, so it is set in the dashboard, not the file.`,
+        },
+      ),
     ];
   }
   if (credentials !== 'true') {
@@ -340,7 +385,9 @@ async function checkDemo(api, origin, options) {
 
   const steps = [];
   if (!response.ok) {
-    steps.push(step('demo', false, `the one-click demo did not answer: ${connectionHint(response)}`));
+    steps.push(
+      step('demo', false, `the one-click demo did not answer: ${connectionHint(response)}`),
+    );
     return { steps, guest: null };
   }
 
@@ -348,7 +395,7 @@ async function checkDemo(api, origin, options) {
     steps.push(
       step('demo', false, '403 — the demo path is switched off on this deployment', {
         hint: 'DEMO_LOGIN_ENABLED=false: unset it (or set it to true) on the API host and redeploy. This is the path the "core functionality without sign-up" rubric weight is about.',
-      })
+      }),
     );
     return { steps, guest: null };
   }
@@ -356,7 +403,7 @@ async function checkDemo(api, origin, options) {
     steps.push(
       step('demo', false, '429 — the one-click path is rate limited right now', {
         hint: 'either genuinely busy, or TRUST_PROXY is off so every visitor behind the platform proxy shares one IP budget. A judge seeing this reads it as a broken button.',
-      })
+      }),
     );
     return { steps, guest: null };
   }
@@ -364,20 +411,28 @@ async function checkDemo(api, origin, options) {
     steps.push(
       step('demo', false, `${response.status} — the API could not provision a guest`, {
         hint: 'read the host logs. A missing JWT_SECRET fails every session route, and a missing MONGO_URI fails writes.',
-      })
+      }),
     );
     return { steps, guest: null };
   }
   if (response.status !== 200 || !response.json?.token || !response.json?.roomCode) {
     steps.push(
-      step('demo', false, `${response.status} with an unexpected body: ${response.text.slice(0, 120)}`)
+      step(
+        'demo',
+        false,
+        `${response.status} with an unexpected body: ${response.text.slice(0, 120)}`,
+      ),
     );
     return { steps, guest: null };
   }
 
   const guest = { token: response.json.token, roomCode: response.json.roomCode, ms: response.ms };
   steps.push(
-    step('demo', true, `one click provisioned a guest in room ${color.bold(guest.roomCode)} (${(guest.ms / 1000).toFixed(1)}s)`)
+    step(
+      'demo',
+      true,
+      `one click provisioned a guest in room ${color.bold(guest.roomCode)} (${(guest.ms / 1000).toFixed(1)}s)`,
+    ),
   );
   return { steps, guest };
 }
@@ -389,9 +444,18 @@ async function checkSeededRoom(api, guest, options) {
     timeoutMs: options.timeoutMs,
   });
 
-  if (!response.ok) return [step('seeded', false, `${connectionHint(response)} while reading room ${guest.roomCode}`)];
+  if (!response.ok)
+    return [
+      step('seeded', false, `${connectionHint(response)} while reading room ${guest.roomCode}`),
+    ];
   if (response.status !== 200) {
-    return [step('seeded', false, `reading room ${guest.roomCode} answered ${response.status}: ${response.text.slice(0, 120)}`)];
+    return [
+      step(
+        'seeded',
+        false,
+        `reading room ${guest.roomCode} answered ${response.status}: ${response.text.slice(0, 120)}`,
+      ),
+    ];
   }
 
   const meeting = response.json;
@@ -401,17 +465,27 @@ async function checkSeededRoom(api, guest, options) {
 
   if (chat === 0 || !hasSummary || items === 0) {
     return [
-      step('seeded', false, `the room arrived with ${chat} chat message(s), ${items} action item(s) and ${hasSummary ? 'a summary' : 'no summary'}`, {
-        hint: 'the sample meeting behind services/demoContent.js is what fills those; an empty room makes the chat and AI tabs look broken on arrival',
-      }),
+      step(
+        'seeded',
+        false,
+        `the room arrived with ${chat} chat message(s), ${items} action item(s) and ${hasSummary ? 'a summary' : 'no summary'}`,
+        {
+          hint: 'the sample meeting behind services/demoContent.js is what fills those; an empty room makes the chat and AI tabs look broken on arrival',
+        },
+      ),
     ];
   }
 
   return [
-    step('seeded', true, `the room arrives populated: ${chat} chat message(s), a summary, ${items} action item(s)`, {
-      participants: meeting.participants?.length ?? 0,
-      meetingId: meeting._id,
-    }),
+    step(
+      'seeded',
+      true,
+      `the room arrives populated: ${chat} chat message(s), a summary, ${items} action item(s)`,
+      {
+        participants: meeting.participants?.length ?? 0,
+        meetingId: meeting._id,
+      },
+    ),
   ];
 }
 
@@ -428,10 +502,15 @@ async function checkGuestLink(api, origin, guest, before, options) {
     ...(origin ? { headers: { Origin: origin } } : {}),
   });
 
-  if (!response.ok) return [step('link', false, `joining by room code failed: ${connectionHint(response)}`)];
+  if (!response.ok)
+    return [step('link', false, `joining by room code failed: ${connectionHint(response)}`)];
   if (response.status !== 200 || response.json?.roomCode !== guest.roomCode) {
     return [
-      step('link', false, `POST /api/auth/demo { roomCode } answered ${response.status} with room ${response.json?.roomCode ?? 'nothing'}`),
+      step(
+        'link',
+        false,
+        `POST /api/auth/demo { roomCode } answered ${response.status} with room ${response.json?.roomCode ?? 'nothing'}`,
+      ),
     ];
   }
 
@@ -441,15 +520,31 @@ async function checkGuestLink(api, origin, guest, before, options) {
   });
   const participants = after.json?.participants?.length;
 
-  if (!after.ok || after.status !== 200 || typeof participants !== 'number' || participants <= before) {
+  if (
+    !after.ok ||
+    after.status !== 200 ||
+    typeof participants !== 'number' ||
+    participants <= before
+  ) {
     return [
-      step('link', false, `a second visitor got a token but the room still shows ${participants ?? before} participant(s)`, {
-        hint: 'a shared link has to add the visitor as a participant of that room — see joinGuestToRoom in services/guest.js',
-      }),
+      step(
+        'link',
+        false,
+        `a second visitor got a token but the room still shows ${participants ?? before} participant(s)`,
+        {
+          hint: 'a shared link has to add the visitor as a participant of that room — see joinGuestToRoom in services/guest.js',
+        },
+      ),
     ];
   }
 
-  return [step('link', true, `a second visitor joined the same room with no account (${before} → ${participants} participants)`)];
+  return [
+    step(
+      'link',
+      true,
+      `a second visitor joined the same room with no account (${before} → ${participants} participants)`,
+    ),
+  ];
 }
 
 /** A refresh on a room URL is the most likely 404 a visitor can find. */
@@ -458,7 +553,9 @@ async function checkClientDeepLink(client, guest, options) {
     return [step('client', false, 'no client URL to check — pass --client <url>', { soft: true })];
   }
 
-  const response = await request(`${client}/room/${guest.roomCode}`, { timeoutMs: options.timeoutMs });
+  const response = await request(`${client}/room/${guest.roomCode}`, {
+    timeoutMs: options.timeoutMs,
+  });
 
   if (!response.ok) return [step('client', false, connectionHint(response))];
   if (response.status !== 200) {
@@ -471,7 +568,7 @@ async function checkClientDeepLink(client, guest, options) {
   if (!/<div[^>]+id=["']root["']/i.test(response.text)) {
     return [
       step('client', false, 'the room URL returned 200 but not the app shell', {
-        hint: 'the response is not the built index.html — check the host\'s output directory (client/dist) and its rewrite rule',
+        hint: "the response is not the built index.html — check the host's output directory (client/dist) and its rewrite rule",
       }),
     ];
   }
@@ -488,13 +585,18 @@ async function main() {
   const serverEnv = readEnvFile(path.resolve(root, 'server/.env'));
 
   const api = asUrl(
-    firstNonEmpty(options.api, process.env.DEMO_API_URL, process.env.VITE_API_URL, clientEnv.VITE_API_URL),
-    '--api'
+    firstNonEmpty(
+      options.api,
+      process.env.DEMO_API_URL,
+      process.env.VITE_API_URL,
+      clientEnv.VITE_API_URL,
+    ),
+    '--api',
   );
   const client = asUrl(firstNonEmpty(options.client, process.env.DEMO_CLIENT_URL), '--client');
   const origin = asUrl(
     firstNonEmpty(options.origin, client, process.env.APP_BASE_URL, serverEnv.APP_BASE_URL),
-    '--origin'
+    '--origin',
   );
 
   if (!options.json) {
@@ -504,7 +606,7 @@ async function main() {
 
   if (!api) {
     fail(
-      'No API URL. Pass --api https://your-api.onrender.com, set DEMO_API_URL, or fill VITE_API_URL in client/.env.'
+      'No API URL. Pass --api https://your-api.onrender.com, set DEMO_API_URL, or fill VITE_API_URL in client/.env.',
     );
   }
 
@@ -527,7 +629,9 @@ async function main() {
       created = '1 guest room + 2 guest accounts';
       const seeded = await checkSeededRoom(api, guest, options);
       results.push(...seeded);
-      results.push(...(await checkGuestLink(api, origin, guest, seeded[0].participants ?? 0, options)));
+      results.push(
+        ...(await checkGuestLink(api, origin, guest, seeded[0].participants ?? 0, options)),
+      );
       results.push(...(await checkClientDeepLink(client, guest, options)));
     }
   }
@@ -552,21 +656,27 @@ async function main() {
   say('');
   say(
     `  ${failed === 0 ? color.ok('✓') : color.bad('✖')} ${passed} of ${hard.length} checks passed` +
-      (failed ? ` — ${failed} to fix above` : '.')
+      (failed ? ` — ${failed} to fix above` : '.'),
   );
 
   if (api.startsWith('http://') && origin?.startsWith('https://')) {
     say(
-      `  ${color.warn('!')} the API is http:// and the client is https://: the browser blocks that as mixed content.`
+      `  ${color.warn('!')} the API is http:// and the client is https://: the browser blocks that as mixed content.`,
     );
   }
   if (created) {
-    say(`  ${color.dim('data created')}  ${created}, taken back out by guest retention (GUEST_RETENTION_HOURS).`);
+    say(
+      `  ${color.dim('data created')}  ${created}, taken back out by guest retention (GUEST_RETENTION_HOURS).`,
+    );
   }
 
   say('');
-  say(`  ${color.dim('Not covered')}  whether two *different* networks can reach each other: that needs two devices on two`);
-  say('                connections (see the two-network smoke test in the README) and a TURN relay,');
+  say(
+    `  ${color.dim('Not covered')}  whether two *different* networks can reach each other: that needs two devices on two`,
+  );
+  say(
+    '                connections (see the two-network smoke test in the README) and a TURN relay,',
+  );
   say('                which `npm run check:turn` can verify from one machine.');
   say('');
 

@@ -41,19 +41,19 @@ services:
       # their own. This is the highest-weighted path on the rubric, so it is on
       # by default rather than left to a dashboard toggle.
       - key: DEMO_LOGIN_ENABLED
-        value: "true"
+        value: 'true'
       - key: DEMO_TITLE
         value: IntellMeet live demo
       # Guests are throwaway users, so bound them twice over: by count here and
       # by age in the sweep below.
       - key: DEMO_MAX_GUEST_ROOMS
-        value: "200"
+        value: '200'
       - key: GUEST_RETENTION_ENABLED
-        value: "true"
+        value: 'true'
       - key: GUEST_RETENTION_HOURS
-        value: "24"
+        value: '24'
       - key: GUEST_RETENTION_INTERVAL_MINUTES
-        value: "60"
+        value: '60'
 
       # Where a confirmation email points, i.e. the URL people reach the app at.
       # Set this to the Vercel origin in the dashboard.
@@ -65,7 +65,7 @@ services:
       # the account permanently pending. Set a webhook and flip this to true for
       # the fully verified path.
       - key: EMAIL_VERIFICATION_REQUIRED
-        value: "false"
+        value: 'false'
       # A JSON POST of { to, subject, text, link }: every provider has an HTTP
       # send endpoint, and it keeps the project dependency-free.
       - key: MAIL_WEBHOOK_URL

@@ -6,7 +6,10 @@ const { io: ioClient } = require('socket.io-client');
 
 function waitForEvent(socket, event, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out waiting for '${event}'`)), timeoutMs);
+    const timer = setTimeout(
+      () => reject(new Error(`timed out waiting for '${event}'`)),
+      timeoutMs,
+    );
     socket.once(event, (payload) => {
       clearTimeout(timer);
       resolve(payload);

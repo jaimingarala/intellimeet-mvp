@@ -46,7 +46,10 @@ describe('admin: sweep trigger and stats', () => {
 
   test('rejects a missing or wrong token', async () => {
     assert.equal((await api('/api/admin/stats')).status, 403);
-    assert.equal((await api('/api/admin/stats', { headers: { 'x-admin-token': 'nope' } })).status, 403);
+    assert.equal(
+      (await api('/api/admin/stats', { headers: { 'x-admin-token': 'nope' } })).status,
+      403,
+    );
     assert.equal((await api('/api/admin/sweep', { method: 'POST' })).status, 403);
   });
 
@@ -78,7 +81,10 @@ describe('admin: sweep trigger and stats', () => {
     assert.equal(res.body.stats.lastSweep.guests, 1);
     assert.equal(typeof res.body.stats.lastSweep.at, 'string');
     assert.equal(res.body.stats.guests, 0);
-    assert.equal(store.meetings.some((m) => m.roomCode === guest.roomCode), false);
+    assert.equal(
+      store.meetings.some((m) => m.roomCode === guest.roomCode),
+      false,
+    );
   });
 
   test('will not sweep a room someone is still sitting in', async () => {
@@ -101,7 +107,7 @@ describe('admin: sweep trigger and stats', () => {
       assert.equal(res.body.stats.live.rooms, 1);
       assert.ok(
         store.meetings.some((m) => m.roomCode === guest.roomCode),
-        'the live room survives a sweep triggered from outside'
+        'the live room survives a sweep triggered from outside',
       );
     } finally {
       socket.disconnect();

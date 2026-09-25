@@ -134,10 +134,14 @@ export default function MeetingRoom() {
       // test is looking at the video, not the devtools.
       pc.onicecandidateerror = (event) => {
         updateDiagnostics(socketId, {
-          error: { code: event.errorCode, text: event.errorText || 'unknown', url: event.url || '' },
+          error: {
+            code: event.errorCode,
+            text: event.errorText || 'unknown',
+            url: event.url || '',
+          },
         });
         console.warn(
-          `ICE candidate error (${event.errorCode}): ${event.errorText || 'unknown'} ${event.url || ''}`.trim()
+          `ICE candidate error (${event.errorCode}): ${event.errorText || 'unknown'} ${event.url || ''}`.trim(),
         );
       };
 
@@ -175,7 +179,7 @@ export default function MeetingRoom() {
       peerConnectionsRef.current[socketId] = pc;
       return pc;
     },
-    [updateDiagnostics]
+    [updateDiagnostics],
   );
 
   // Acquire camera/mic, then connect to Socket.io and wire up signaling.
@@ -206,13 +210,21 @@ export default function MeetingRoom() {
 
       socket.on('room-users', ({ peers: existingPeers }) => {
         existingPeers.forEach(({ socketId, name }) => {
-          setPeers((prev) => (prev.find((p) => p.socketId === socketId) ? prev : [...prev, { socketId, name, stream: null }]));
+          setPeers((prev) =>
+            prev.find((p) => p.socketId === socketId)
+              ? prev
+              : [...prev, { socketId, name, stream: null }],
+          );
         });
       });
 
       // A newcomer joined after us: we initiate the offer.
       socket.on('peer-joined', async ({ socketId, name }) => {
-        setPeers((prev) => (prev.find((p) => p.socketId === socketId) ? prev : [...prev, { socketId, name, stream: null }]));
+        setPeers((prev) =>
+          prev.find((p) => p.socketId === socketId)
+            ? prev
+            : [...prev, { socketId, name, stream: null }],
+        );
         const pc = createPeerConnection(socketId, name);
         try {
           const offer = await pc.createOffer();
@@ -369,7 +381,11 @@ export default function MeetingRoom() {
           </div>
 
           <div style={{ padding: 32, textAlign: 'center', margin: 'auto' }}>
-            <h2>{removed.banned ? 'You have been removed from this meeting' : 'The host removed you from this meeting'}</h2>
+            <h2>
+              {removed.banned
+                ? 'You have been removed from this meeting'
+                : 'The host removed you from this meeting'}
+            </h2>
             <p style={{ color: 'var(--muted, #9aa0a6)', marginBottom: 20 }}>
               {removed.banned
                 ? 'The host banned you, so you cannot rejoin with this account unless they invite you again.'
@@ -404,12 +420,17 @@ export default function MeetingRoom() {
           </div>
         </div>
 
-        {loadError && <div className="form-error" style={{ margin: 16 }}>{loadError}</div>}
+        {loadError && (
+          <div className="form-error" style={{ margin: 16 }}>
+            {loadError}
+          </div>
+        )}
 
         {relayWithoutTurn && (
           <div className="form-error" style={{ margin: 16 }}>
-            Relay-only mode is on (<code>VITE_ICE_TRANSPORT_POLICY=relay</code>) but no TURN server is
-            configured, so peers cannot connect. Set <code>VITE_TURN_URLS</code>, or drop the policy.
+            Relay-only mode is on (<code>VITE_ICE_TRANSPORT_POLICY=relay</code>) but no TURN server
+            is configured, so peers cannot connect. Set <code>VITE_TURN_URLS</code>, or drop the
+            policy.
           </div>
         )}
         {relayOnly && !relayWithoutTurn && (
@@ -423,15 +444,23 @@ export default function MeetingRoom() {
           localName={user?.name || 'You'}
           peers={peers}
           peerStatus={Object.fromEntries(
-            peers.map((p) => [p.socketId, peerPathBadge(peerDiagnostics[p.socketId])])
+            peers.map((p) => [p.socketId, peerPathBadge(peerDiagnostics[p.socketId])]),
           )}
         />
 
         <div className="controls-bar">
-          <button className={`control-btn ${micOn ? '' : 'off'}`} onClick={toggleMic} title="Toggle microphone">
+          <button
+            className={`control-btn ${micOn ? '' : 'off'}`}
+            onClick={toggleMic}
+            title="Toggle microphone"
+          >
             {micOn ? '🎙️' : '🔇'}
           </button>
-          <button className={`control-btn ${camOn ? '' : 'off'}`} onClick={toggleCam} title="Toggle camera">
+          <button
+            className={`control-btn ${camOn ? '' : 'off'}`}
+            onClick={toggleCam}
+            title="Toggle camera"
+          >
             {camOn ? '🎥' : '📷'}
           </button>
           <button className="btn btn-danger" onClick={handleLeave}>
@@ -442,10 +471,16 @@ export default function MeetingRoom() {
 
       <div className="side-panel">
         <div className="side-tabs">
-          <button className={`side-tab ${tab === 'chat' ? 'active' : ''}`} onClick={() => setTab('chat')}>
+          <button
+            className={`side-tab ${tab === 'chat' ? 'active' : ''}`}
+            onClick={() => setTab('chat')}
+          >
             Chat
           </button>
-          <button className={`side-tab ${tab === 'summary' ? 'active' : ''}`} onClick={() => setTab('summary')}>
+          <button
+            className={`side-tab ${tab === 'summary' ? 'active' : ''}`}
+            onClick={() => setTab('summary')}
+          >
             AI Summary
           </button>
         </div>
@@ -453,7 +488,12 @@ export default function MeetingRoom() {
           {tab === 'chat' ? (
             <ChatPanel messages={messages} onSend={sendChat} currentUserName={user?.name} />
           ) : (
-            <SummaryPanel onGenerate={generateSummary} summary={summary} actionItems={actionItems} engine={engine} />
+            <SummaryPanel
+              onGenerate={generateSummary}
+              summary={summary}
+              actionItems={actionItems}
+              engine={engine}
+            />
           )}
         </div>
       </div>

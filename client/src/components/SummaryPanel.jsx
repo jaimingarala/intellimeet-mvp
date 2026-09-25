@@ -32,7 +32,12 @@ export default function SummaryPanel({ onGenerate, summary, actionItems, engine 
           {transcript.length.toLocaleString()} / {MAX_TRANSCRIPT_CHARS.toLocaleString()} characters
         </div>
       </div>
-      <button className="btn btn-mint" onClick={handleGenerate} disabled={loading} style={{ width: '100%', marginBottom: 16 }}>
+      <button
+        className="btn btn-mint"
+        onClick={handleGenerate}
+        disabled={loading}
+        style={{ width: '100%', marginBottom: 16 }}
+      >
         {loading ? 'Generating…' : 'Generate summary + action items'}
       </button>
 

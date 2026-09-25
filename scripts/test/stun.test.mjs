@@ -107,7 +107,7 @@ function unsigned(messageHex, trailingHexLength) {
 test('matches the MESSAGE-INTEGRITY of RFC 5769 §2.1, a short-term credential request', () => {
   const signed = withMessageIntegrity(
     unsigned(SAMPLE_REQUEST, 64), // MESSAGE-INTEGRITY (24 bytes) + FINGERPRINT (8)
-    utf8(SHORT_TERM_PASSWORD)
+    utf8(SHORT_TERM_PASSWORD),
   );
 
   // The RFC's sample carries a FINGERPRINT after MESSAGE-INTEGRITY and so

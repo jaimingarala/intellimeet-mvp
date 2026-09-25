@@ -226,7 +226,9 @@ function parseAddress(value, transactionId, { xor }) {
 
 function formatAddress(entry) {
   if (!entry) return null;
-  return entry.address.includes(':') ? `[${entry.address}]:${entry.port}` : `${entry.address}:${entry.port}`;
+  return entry.address.includes(':')
+    ? `[${entry.address}]:${entry.port}`
+    : `${entry.address}:${entry.port}`;
 }
 
 function readAddress(parsed, xorType, plainType) {
@@ -262,7 +264,7 @@ function explain(error) {
     case 401:
       return 'the credential was not accepted — check VITE_TURN_USERNAME and VITE_TURN_CREDENTIAL';
     case 403:
-      return 'these credentials are not valid for this realm — if the server uses coturn\'s `use-auth-secret`, the credential must be a time-limited HMAC token, not the shared secret (try --secret)';
+      return "these credentials are not valid for this realm — if the server uses coturn's `use-auth-secret`, the credential must be a time-limited HMAC token, not the shared secret (try --secret)";
     case 404:
       return 'realm not found — the username may belong to a different TURN service';
     case 420:
@@ -272,13 +274,13 @@ function explain(error) {
     case 438:
       return 'the nonce went stale mid-handshake — retrying usually clears this';
     case 441:
-      return 'wrong credentials — if the server uses coturn\'s `use-auth-secret`, pass the shared secret with --secret';
+      return "wrong credentials — if the server uses coturn's `use-auth-secret`, pass the shared secret with --secret";
     case 442:
       return 'UDP relay is unsupported here — try a TCP transport (turn:…?transport=tcp or turns:…)';
     case 486:
       return 'the server is at its allocation quota';
     case 500:
-      return 'server error — check the relay\'s logs';
+      return "server error — check the relay's logs";
     case 508:
       return 'the relay has no capacity left (port range or quota exhausted) — the server is alive, so this is a server-side limit';
     default:
@@ -499,8 +501,8 @@ async function exchange(transport, message, transactionId, options) {
               `      ${color.dim('·')} ${color.dim(
                 `${CLASS_NAMES[parsed.cls]} 0x${messageType(parsed.method, parsed.cls)
                   .toString(16)
-                  .padStart(4, '0')} (${parsed.bytes.length} bytes)`
-              )}`
+                  .padStart(4, '0')} (${parsed.bytes.length} bytes)`,
+              )}`,
             );
           }
           return parsed;
@@ -534,7 +536,7 @@ function allocateMessage(transactionId, auth) {
     attributes.push(
       attribute(ATTR.USERNAME, text(auth.username)),
       attribute(ATTR.REALM, text(auth.realm)),
-      attribute(ATTR.NONCE, text(auth.nonce))
+      attribute(ATTR.NONCE, text(auth.nonce)),
     );
   }
   return buildMessage({ method: METHOD.allocate, cls: CLASS.request, transactionId, attributes });
@@ -552,7 +554,7 @@ async function tryBinding(transport, options) {
       transport,
       buildMessage({ method: METHOD.binding, cls: CLASS.request, transactionId }),
       transactionId,
-      options
+      options,
     );
     return {
       ok: true,
@@ -620,7 +622,11 @@ async function checkRelay(target, credentials, options) {
     // A TLS refusal lands here rather than in the exchange below, so the hint
     // has to travel with this failure too.
     const hint = transportHint(err);
-    return failStep('reachable', `cannot open the connection: ${err.message}`, hint ? { hint } : {});
+    return failStep(
+      'reachable',
+      `cannot open the connection: ${err.message}`,
+      hint ? { hint } : {},
+    );
   }
 
   try {
@@ -629,12 +635,7 @@ async function checkRelay(target, credentials, options) {
     // TURN must answer an unauthenticated Allocate with 401 (or 438 if its nonce
     // just expired), carrying the realm and nonce the credential is scoped to.
     const challengeId = newTransactionId();
-    const challenge = await exchange(
-      transport,
-      allocateMessage(challengeId),
-      challengeId,
-      options
-    );
+    const challenge = await exchange(transport, allocateMessage(challengeId), challengeId, options);
 
     const realm = attributeText(challenge, ATTR.REALM);
     const nonce = attributeText(challenge, ATTR.NONCE);
@@ -648,7 +649,9 @@ async function checkRelay(target, credentials, options) {
       add(
         'relay',
         Boolean(relayed),
-        relayed ? `${formatAddress(relayed)} (no authentication configured)` : 'no relay address on the response'
+        relayed
+          ? `${formatAddress(relayed)} (no authentication configured)`
+          : 'no relay address on the response',
       );
       return { target, steps, ok: Boolean(relayed) };
     }
@@ -659,9 +662,17 @@ async function checkRelay(target, credentials, options) {
     // Anything other than a credential challenge is a failure with its own
     // meaning — usually "the port belongs to something that isn't TURN".
     if ((error.code !== 401 && error.code !== 438) || !realm || !nonce) {
-      add('reachable', true, reachableDetail(binding, `TURN answered ${error.code} ${error.reason}`));
+      add(
+        'reachable',
+        true,
+        reachableDetail(binding, `TURN answered ${error.code} ${error.reason}`),
+      );
       if (!realm || !nonce) {
-        add('challenge', false, `challenged with ${error.code} ${error.reason} but no realm or nonce — not a TURN server?`);
+        add(
+          'challenge',
+          false,
+          `challenged with ${error.code} ${error.reason} but no realm or nonce — not a TURN server?`,
+        );
       } else {
         add('challenge', false, `${error.code} ${error.reason}${hint ? ` — ${hint}` : ''}`);
       }
@@ -677,7 +688,7 @@ async function checkRelay(target, credentials, options) {
       transport,
       withMessageIntegrity(allocateMessage(allocateId, { ...credentials, realm, nonce }), key),
       allocateId,
-      options
+      options,
     );
 
     if (allocation.cls === CLASS.error) {
@@ -691,7 +702,7 @@ async function checkRelay(target, credentials, options) {
     if (!verifyMessageIntegrity(allocation, key)) {
       return failStep(
         'relay',
-        'the reply failed MESSAGE-INTEGRITY — refusing to trust an unauthenticated response'
+        'the reply failed MESSAGE-INTEGRITY — refusing to trust an unauthenticated response',
       );
     }
 
@@ -705,7 +716,7 @@ async function checkRelay(target, credentials, options) {
       `allocated ${formatAddress(relayed)}` +
         (lifetime && lifetime.value.length >= 4
           ? color.dim(` (lifetime ${lifetime.value.readUInt32BE(0)}s)`)
-          : '')
+          : ''),
     );
     return { target, steps, ok: true };
   } catch (err) {
@@ -808,7 +819,14 @@ Usage: npm run check:turn [options]
 `;
 
 function parseArgs(argv) {
-  const options = { urls: null, env: null, timeoutMs: 4000, insecure: false, verbose: false, ttl: 3600 };
+  const options = {
+    urls: null,
+    env: null,
+    timeoutMs: 4000,
+    insecure: false,
+    verbose: false,
+    ttl: 3600,
+  };
   const takesValue = {
     '--urls': 'urls',
     '--username': 'username',
@@ -844,15 +862,20 @@ function parseArgs(argv) {
 
   if (options.ttl !== 3600) options.ttl = Number(options.ttl);
   if (options.timeoutMs !== 4000) options.timeoutMs = Number(options.timeoutMs);
-  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) fail('--timeout must be a positive number of milliseconds');
-  if (!Number.isFinite(options.ttl) || options.ttl <= 0) fail('--ttl must be a positive number of seconds');
+  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+    fail('--timeout must be a positive number of milliseconds');
+  if (!Number.isFinite(options.ttl) || options.ttl <= 0)
+    fail('--ttl must be a positive number of seconds');
   return options;
 }
 
 /** coturn's REST credentials: username "expiry:label", password HMAC-SHA1(secret, username). */
 function mintCredential(secret, label, ttl) {
   const username = `${Math.floor(Date.now() / 1000) + ttl}:${label}`;
-  return { username, credential: crypto.createHmac('sha1', secret).update(username).digest('base64') };
+  return {
+    username,
+    credential: crypto.createHmac('sha1', secret).update(username).digest('base64'),
+  };
 }
 
 // --- output ------------------------------------------------------------------
@@ -877,8 +900,8 @@ function renderResult(result) {
   say('');
   say(
     `  ${color.bold(result.target.url)} ${color.dim(
-      `(${result.target.transport} ${result.target.host}:${result.target.port})`
-    )}`
+      `(${result.target.transport} ${result.target.host}:${result.target.port})`,
+    )}`,
   );
   for (const step of result.steps) {
     const mark = step.ok ? color.ok('✓') : step.soft ? color.warn('·') : color.bad('✗');
@@ -916,8 +939,10 @@ async function main() {
     process.exit(1);
   }
 
-  const username = options.username ?? process.env.VITE_TURN_USERNAME ?? fileEnv.VITE_TURN_USERNAME ?? '';
-  const credential = options.credential ?? process.env.VITE_TURN_CREDENTIAL ?? fileEnv.VITE_TURN_CREDENTIAL ?? '';
+  const username =
+    options.username ?? process.env.VITE_TURN_USERNAME ?? fileEnv.VITE_TURN_USERNAME ?? '';
+  const credential =
+    options.credential ?? process.env.VITE_TURN_CREDENTIAL ?? fileEnv.VITE_TURN_CREDENTIAL ?? '';
   const sharedSecret = options.secret ?? process.env.TURN_AUTH_SECRET ?? '';
 
   let credentials;
@@ -934,12 +959,14 @@ async function main() {
         : username
           ? `${username} ${color.dim(`(from ${path.relative(root, envFile)})`)}`
           : color.warn('none configured')
-    }`
+    }`,
   );
 
   if (!sharedSecret && (!username || !credential)) {
     say('');
-    say(`  ${color.warn('!')} No TURN credentials found — the check will fail at the challenge step unless`);
+    say(
+      `  ${color.warn('!')} No TURN credentials found — the check will fail at the challenge step unless`,
+    );
     say('    the relay allows anonymous allocations. Set them, or pass --secret for coturn.');
   }
   if (options.insecure) {
@@ -963,11 +990,7 @@ async function main() {
   }
 
   const usable = results.filter((result) => result.ok);
-  const policy = (
-    process.env.VITE_ICE_TRANSPORT_POLICY ??
-    fileEnv.VITE_ICE_TRANSPORT_POLICY ??
-    ''
-  )
+  const policy = (process.env.VITE_ICE_TRANSPORT_POLICY ?? fileEnv.VITE_ICE_TRANSPORT_POLICY ?? '')
     .trim()
     .toLowerCase();
 
@@ -977,14 +1000,14 @@ async function main() {
       usable.length
         ? `${usable.length} of ${results.length} relay${results.length === 1 ? '' : 's'} allocated an address.`
         : 'No relay allocated an address.'
-    }`
+    }`,
   );
   say(
     `  ${color.dim('ICE policy')} ${policy === 'relay' ? 'relay' : 'default (direct preferred)'}${
       policy === 'relay'
         ? ' — media will be forced through TURN, so each tile can be read as proof.'
         : ` — set VITE_ICE_TRANSPORT_POLICY=relay to force media through the relay.`
-    }`
+    }`,
   );
 
   if (usable.length === 0) {
@@ -992,7 +1015,9 @@ async function main() {
     say('  A working relay is what makes the cross-network smoke test possible; fix the step');
     say('  marked ✗ above before trying it.');
   } else {
-    say(`  ${color.dim('Not covered')} whether the relay forwards media — that needs a second network.`);
+    say(
+      `  ${color.dim('Not covered')} whether the relay forwards media — that needs a second network.`,
+    );
   }
   say('');
 
