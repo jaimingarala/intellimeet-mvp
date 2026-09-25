@@ -142,6 +142,85 @@ describe('socket payload guards', () => {
     bob.disconnect();
   });
 
+  test('a media-state announcement reaches the room, but not back to the sender', async () => {
+    // A remote track carries no display surface and a muted microphone is
+    // indistinguishable from a quiet one, so the tile can only be labelled right
+    // if the peer it belongs to says so.
+    const meeting = await fixture();
+    const alice = await connect(baseUrl(), host.token);
+    const bob = await connect(baseUrl(), host.token);
+    await joinRoom(alice, meeting.roomCode);
+    await joinRoom(bob, meeting.roomCode);
+
+    const arrived = waitForEvent(bob, 'media-state');
+    let echoed = false;
+    alice.on('media-state', () => {
+      echoed = true;
+    });
+
+    alice.emit('media-state', { mic: false, camera: true, screen: true });
+    const state = await arrived;
+
+    assert.equal(state.socketId, alice.id);
+    assert.deepEqual(
+      { mic: state.mic, camera: state.camera, screen: state.screen },
+      {
+        mic: false,
+        camera: true,
+        screen: true,
+      },
+    );
+
+    await sleep(150);
+    assert.equal(echoed, false, 'the sender already knows its own state');
+
+    alice.disconnect();
+    bob.disconnect();
+  });
+
+  test('media-state flags that are not booleans are dropped, not relayed', async () => {
+    const meeting = await fixture();
+    const alice = await connect(baseUrl(), host.token);
+    const bob = await connect(baseUrl(), host.token);
+    await joinRoom(alice, meeting.roomCode);
+    await joinRoom(bob, meeting.roomCode);
+
+    const heard = [];
+    bob.on('media-state', (state) => heard.push(state));
+
+    // Unrecognised and wrongly-typed fields are not the room's business: relaying
+    // them would teach every other client to render a badge off a string.
+    alice.emit('media-state', { mic: false, screen: 'yes', volume: 9 });
+    alice.emit('media-state', { screen: null });
+    alice.emit('media-state', 'not-an-object');
+    alice.emit('media-state');
+    await sleep(200);
+
+    assert.equal(heard.length, 1);
+    assert.deepEqual(Object.keys(heard[0]).sort(), ['mic', 'socketId']);
+
+    alice.disconnect();
+    bob.disconnect();
+  });
+
+  test('a socket that never joined cannot announce anything to a room', async () => {
+    const meeting = await fixture();
+    const listener = await connect(baseUrl(), host.token);
+    await joinRoom(listener, meeting.roomCode);
+    const unjoined = await connect(baseUrl(), host.token);
+
+    let heard = false;
+    listener.on('media-state', () => {
+      heard = true;
+    });
+    unjoined.emit('media-state', { mic: false });
+    await sleep(200);
+
+    assert.equal(heard, false);
+    listener.disconnect();
+    unjoined.disconnect();
+  });
+
   test('a chat flood is cut off without costing the room a write per message', async () => {
     const meeting = await fixture();
     const flooder = await signup('Flooder', 'flooder@test.dev');

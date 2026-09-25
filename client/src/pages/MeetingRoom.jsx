@@ -14,6 +14,7 @@ import {
   applyRemoteDescription,
   addOrQueueIceCandidate,
 } from '../lib/webrtc.js';
+import { stopTracks, switchOutgoingVideo } from '../lib/screenShare.js';
 
 /**
  * What to show on a peer's tile: whether media is going direct, through the TURN
@@ -64,6 +65,11 @@ export default function MeetingRoom() {
   const [actionItems, setActionItems] = useState([]);
   const [engine, setEngine] = useState('');
   const [loadError, setLoadError] = useState('');
+  // The captured display, when this client is sharing. Kept separate from
+  // `localStream` because it is what gets released, and because the local tile
+  // has to be able to say which of the two it is showing.
+  const [screenStream, setScreenStream] = useState(null);
+  const [peerMedia, setPeerMedia] = useState({}); // socketId -> { mic, camera, screen }
   const [removed, setRemoved] = useState(null); // { banned } once the host evicts us
   const [linkCopied, setLinkCopied] = useState(false);
   const [peerDiagnostics, setPeerDiagnostics] = useState({}); // socketId -> { state, relayed, ... }
@@ -72,6 +78,11 @@ export default function MeetingRoom() {
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
   const candidateTypesRef = useRef({}); // socketId -> Set of host/srflx/relay seen
+  // The camera track, held separately from the outgoing stream: while a screen is
+  // being shared the outgoing video is the display, and "toggle camera" has to
+  // keep meaning the camera.
+  const cameraTrackRef = useRef(null);
+  const screenStreamRef = useRef(null);
 
   // Env-derived, so it never changes for the life of the page.
   const relayOnly = getIceTransportPolicy() === 'relay';
@@ -79,6 +90,23 @@ export default function MeetingRoom() {
 
   const updateDiagnostics = useCallback((socketId, patch) => {
     setPeerDiagnostics((prev) => ({ ...prev, [socketId]: { ...prev[socketId], ...patch } }));
+  }, []);
+
+  /**
+   * Tell the room what this client's media is doing.
+   *
+   * A remote track carries no display surface and a muted microphone looks
+   * exactly like a quiet one, so the tiles can only be labelled correctly if the
+   * peer they belong to says so. The flags are read off the live tracks rather
+   * than off React state, which is a render behind by the time this is called.
+   */
+  const announceMedia = useCallback((extra = {}) => {
+    socketRef.current?.emit('media-state', {
+      mic: localStreamRef.current?.getAudioTracks()[0]?.enabled ?? false,
+      camera: cameraTrackRef.current?.enabled ?? false,
+      screen: Boolean(screenStreamRef.current),
+      ...extra,
+    });
   }, []);
 
   // Load meeting metadata (title, prior summary/chat) on mount.
@@ -194,6 +222,7 @@ export default function MeetingRoom() {
           return;
         }
         localStreamRef.current = stream;
+        cameraTrackRef.current = stream.getVideoTracks()[0] || null;
         setLocalStream(stream);
       } catch (err) {
         setLoadError('Could not access camera/microphone. You can still use chat.');
@@ -216,6 +245,9 @@ export default function MeetingRoom() {
               : [...prev, { socketId, name, stream: null }],
           );
         });
+        // Everyone already here needs to know how this client arrives: the mic
+        // may be off, and a share may already be running.
+        announceMedia();
       });
 
       // A newcomer joined after us: we initiate the offer.
@@ -225,6 +257,11 @@ export default function MeetingRoom() {
             ? prev
             : [...prev, { socketId, name, stream: null }],
         );
+        // The newcomer cannot see any of our media flags yet — the relay only
+        // forwards to other sockets — so everybody already in the room repeats
+        // their state for the person who just walked in.
+        announceMedia();
+
         const pc = createPeerConnection(socketId, name);
         try {
           const offer = await pc.createOffer();
@@ -270,11 +307,30 @@ export default function MeetingRoom() {
           delete next[socketId];
           return next;
         });
+        setPeerMedia((prev) => {
+          const next = { ...prev };
+          delete next[socketId];
+          return next;
+        });
         setPeers((prev) => prev.filter((p) => p.socketId !== socketId));
       });
 
       socket.on('chat-message', (message) => {
         setMessages((prev) => [...prev, message]);
+      });
+
+      // How each peer's media is doing, as they told us. Without it a tile cannot
+      // tell a screen share from a webcam, or a muted microphone from silence.
+      socket.on('media-state', (state) => {
+        const { socketId, ...flags } = state;
+        setPeerMedia((prev) => ({ ...prev, [socketId]: { ...prev[socketId], ...flags } }));
+      });
+
+      // Someone ticked an action item off, perhaps in another tab. The server
+      // sends the whole list, including our own change, so every client ends up
+      // on the same state rather than on its own optimistic guess.
+      socket.on('action-item-updated', ({ actionItems: updated }) => {
+        setActionItems(updated);
       });
 
       socket.on('removed-from-room', ({ banned }) => {
@@ -296,6 +352,9 @@ export default function MeetingRoom() {
       Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
       peerConnectionsRef.current = {};
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+      // Releasing the capture is what turns the browser's "stop sharing" bar off.
+      stopTracks(screenStreamRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, token]);
@@ -306,10 +365,15 @@ export default function MeetingRoom() {
     Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
     peerConnectionsRef.current = {};
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    stopTracks(screenStreamRef.current);
     localStreamRef.current = null;
+    cameraTrackRef.current = null;
+    screenStreamRef.current = null;
     candidateTypesRef.current = {};
     setPeerDiagnostics({});
     setLocalStream(null);
+    setScreenStream(null);
+    setPeerMedia({});
     setPeers([]);
     // A client-initiated disconnect won't be retried, which covers the case
     // where the server refused a rejoin but left the socket connected.
@@ -318,22 +382,130 @@ export default function MeetingRoom() {
 
   function toggleMic() {
     const track = localStreamRef.current?.getAudioTracks()[0];
-    if (track) {
-      track.enabled = !track.enabled;
-      setMicOn(track.enabled);
-    }
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setMicOn(track.enabled);
+    announceMedia({ mic: track.enabled });
   }
 
   function toggleCam() {
-    const track = localStreamRef.current?.getVideoTracks()[0];
-    if (track) {
-      track.enabled = !track.enabled;
-      setCamOn(track.enabled);
+    // The camera track specifically: while a screen is being shared the outgoing
+    // video is the display, so going through `localStream` here would mute the
+    // share instead of the camera.
+    const track = cameraTrackRef.current;
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setCamOn(track.enabled);
+    announceMedia({ camera: track.enabled });
+  }
+
+  /**
+   * Start sharing the screen: capture the display, put it into the outgoing
+   * stream in place of the camera, and point every existing connection at it.
+   *
+   * The swap happens in the outgoing MediaStream rather than by adding a track to
+   * each connection, which matters for the peer who joins *during* the share: the
+   * stream keeps one msid, so the new connection carries the audio and the screen
+   * together instead of a video track whose sound arrived under a different
+   * stream id.
+   */
+  async function startScreenShare() {
+    if (screenStreamRef.current) return;
+
+    let display;
+    try {
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch (err) {
+      // Dismissing the picker is a decision, not a failure — only say something
+      // when the browser actually refused.
+      if (err?.name !== 'NotAllowedError' && err?.name !== 'AbortError') {
+        setLoadError('Could not start screen sharing.');
+      }
+      return;
     }
+
+    const screenTrack = display.getVideoTracks()[0];
+    if (!screenTrack) {
+      stopTracks(display);
+      return;
+    }
+
+    let outgoing = localStreamRef.current;
+    if (!outgoing) {
+      // No camera or microphone (the user denied it): a share still works, it is
+      // just video-only, so give it a stream of its own to travel in.
+      outgoing = new MediaStream();
+      localStreamRef.current = outgoing;
+      setLocalStream(outgoing);
+    }
+    if (cameraTrackRef.current) outgoing.removeTrack(cameraTrackRef.current);
+    outgoing.addTrack(screenTrack);
+
+    screenStreamRef.current = display;
+    setScreenStream(display);
+    setLoadError('');
+
+    const result = await switchOutgoingVideo(peerConnectionsRef.current, screenTrack);
+    if (result.failed.length > 0 && result.swapped === 0) {
+      setLoadError('Nobody else can see your screen — their connections could not be switched.');
+    } else if (result.failed.length > 0) {
+      console.warn(`screen share did not reach ${result.failed.length} peer(s)`);
+    }
+
+    // The browser's own "Stop sharing" button lives in the tab, not in our UI.
+    screenTrack.onended = () => stopScreenShare();
+    announceMedia({ screen: true });
+  }
+
+  /** Stop sharing and hand the camera back, if there is one. */
+  function stopScreenShare() {
+    const display = screenStreamRef.current;
+    if (!display) return;
+
+    const [screenTrack] = display.getVideoTracks();
+    // Cleared first, so the browser's own `ended` handler can't re-enter.
+    screenStreamRef.current = null;
+    setScreenStream(null);
+    if (screenTrack) {
+      screenTrack.onended = null;
+      localStreamRef.current?.removeTrack(screenTrack);
+    }
+    stopTracks(display);
+
+    const camera = cameraTrackRef.current;
+    if (camera) {
+      localStreamRef.current?.addTrack(camera);
+      switchOutgoingVideo(peerConnectionsRef.current, camera).then((result) => {
+        if (result.failed.length > 0) {
+          console.warn(`camera did not return for ${result.failed.length} peer(s)`);
+        }
+      });
+    }
+
+    announceMedia({ screen: false });
   }
 
   function sendChat(text) {
     socketRef.current?.emit('chat-message', { roomCode, text });
+  }
+
+  /**
+   * Tick an action item off for the whole room.
+   *
+   * Optimistic, because a checkbox that waits for a round trip feels broken —
+   * and self-correcting, because the server broadcasts the resulting list to
+   * everyone including this client.
+   */
+  async function toggleActionItem(index, done) {
+    const previous = actionItems;
+    setActionItems((items) => items.map((item, i) => (i === index ? { ...item, done } : item)));
+
+    try {
+      await api.patch(`/meetings/${meeting._id}/action-items/${index}`, { done });
+    } catch (err) {
+      setActionItems(previous);
+      setLoadError(err.response?.data?.error || 'Could not update that action item.');
+    }
   }
 
   async function generateSummary(transcript) {
@@ -440,9 +612,13 @@ export default function MeetingRoom() {
         )}
 
         <VideoGrid
-          localStream={localStream}
+          // While sharing, the local tile shows the display rather than the
+          // camera: a sharer needs to see what the room sees.
+          localStream={screenStream || localStream}
           localName={user?.name || 'You'}
+          localMedia={{ mic: micOn, camera: camOn, screen: Boolean(screenStream) }}
           peers={peers}
+          peerMedia={peerMedia}
           peerStatus={Object.fromEntries(
             peers.map((p) => [p.socketId, peerPathBadge(peerDiagnostics[p.socketId])]),
           )}
@@ -462,6 +638,13 @@ export default function MeetingRoom() {
             title="Toggle camera"
           >
             {camOn ? '🎥' : '📷'}
+          </button>
+          <button
+            className={`control-btn ${screenStream ? 'sharing' : ''}`}
+            onClick={screenStream ? stopScreenShare : startScreenShare}
+            title={screenStream ? 'Stop sharing your screen' : 'Share your screen'}
+          >
+            {screenStream ? '⏹️' : '🖥️'}
           </button>
           <button className="btn btn-danger" onClick={handleLeave}>
             Leave
@@ -493,6 +676,7 @@ export default function MeetingRoom() {
               summary={summary}
               actionItems={actionItems}
               engine={engine}
+              onToggleItem={toggleActionItem}
             />
           )}
         </div>

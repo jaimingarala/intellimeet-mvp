@@ -116,6 +116,42 @@ function getLiveSession() {
   return { userIds, roomCodes };
 }
 
+/**
+ * Broadcast to everyone in a room, from the REST layer.
+ *
+ * A route that changes something the room can see (an action item ticked off)
+ * has no socket of its own, and going through `ioRef` is what keeps the live
+ * view and the stored document from disagreeing until someone refreshes.
+ *
+ * Returns false when Socket.io isn't up at all — a REST-only process, or an
+ * out-of-process sweep — which is a fact the caller can report rather than an
+ * error worth throwing.
+ */
+function emitToRoom(roomCode, event, payload) {
+  if (!ioRef) return false;
+  ioRef.in(roomCode).emit(event, payload);
+  return true;
+}
+
+/**
+ * The media flags a client may announce, with anything unrecognised dropped.
+ *
+ * Fixed and small on purpose: this rides through the same relay as signalling,
+ * and a client that sends `{ screen: 'yes' }` should be ignored rather than
+ * teaching every other client to render a badge off a string.
+ */
+const MEDIA_FLAGS = ['mic', 'camera', 'screen'];
+
+function normaliseMediaState(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const state = {};
+  for (const flag of MEDIA_FLAGS) {
+    if (typeof payload[flag] === 'boolean') state[flag] = payload[flag];
+  }
+  return Object.keys(state).length > 0 ? state : null;
+}
+
 function registerSocketHandlers(io) {
   ioRef = io;
   io.use((socket, next) => {
@@ -262,6 +298,21 @@ function registerSocketHandlers(io) {
       }
     });
 
+    // "My mic is off / my camera is off / I am sharing my screen" — what a tile
+    // cannot work out for itself. A remote track carries no display surface, so
+    // without this the room sees a screen share as a webcam and a muted
+    // participant as one who is simply not talking.
+    socket.on('media-state', (payload) => {
+      if (!currentRoom) return;
+      const state = normaliseMediaState(payload);
+      if (!state) return;
+
+      // Only who and what — the room already learned the name when the socket
+      // joined, and a payload of exactly the flags is one a client can merge
+      // without wondering which keys it is allowed to trust.
+      socket.to(currentRoom).emit('media-state', { socketId: socket.id, ...state });
+    });
+
     const leaveCurrentRoom = () => {
       if (currentRoom) {
         // Note: this runs after socket.io has already removed the socket from
@@ -283,6 +334,7 @@ function registerSocketHandlers(io) {
 module.exports = {
   registerSocketHandlers,
   evictUserFromRoom,
+  emitToRoom,
   isBanned,
   getLiveSession,
   chatFlooding,

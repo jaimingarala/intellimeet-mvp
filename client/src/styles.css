@@ -365,6 +365,29 @@ button {
   font-size: 14px;
 }
 
+/* A panel with something beside its heading — the history search, so far. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.panel-head h2 {
+  margin: 0;
+}
+
+.search-input {
+  min-width: 240px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .meeting-list {
   list-style: none;
   margin: 0;
@@ -495,6 +518,12 @@ button {
   object-fit: cover;
 }
 
+/* A shared screen is not cropped. Cover would cut the sides off a slide, which
+   is the part someone switched to their screen to show. */
+.video-tile.screen video {
+  object-fit: contain;
+}
+
 .video-tile .tile-label {
   position: absolute;
   bottom: 8px;
@@ -542,6 +571,23 @@ button {
   border-color: var(--danger);
 }
 
+/* Muted and sharing flags, as the peer they belong to reported them. */
+.video-tile .tile-media {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.tile-flag {
+  background: rgba(15, 20, 32, 0.75);
+  border: 1px solid var(--border);
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
 .relay-note {
   margin: 16px 16px 0;
   padding: 8px 12px;
@@ -578,6 +624,13 @@ button {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
+}
+
+/* Sharing is a state, not a click: the button stays lit while it is running. */
+.control-btn.sharing {
+  background: var(--mint);
+  border-color: var(--mint);
+  color: #06231f;
 }
 
 .side-panel {
@@ -686,6 +739,21 @@ button {
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+.action-item .text {
+  flex: 1;
+}
+
+.action-item input[type='checkbox'] {
+  margin-top: 2px;
+  accent-color: var(--mint);
+  cursor: pointer;
+}
+
+.action-item.done .text {
+  text-decoration: line-through;
+  color: var(--text-dim);
 }
 
 @media (max-width: 860px) {
