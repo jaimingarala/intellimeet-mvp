@@ -27,7 +27,20 @@ jobs:
       # `test:coverage` is `npm test` plus the report, and it exits non-zero
       # below a floor, so the number this job prints is enforced rather than
       # decorative.
-      - run: npm run test:coverage
+      #
+      # `pipefail` is load-bearing: without it the step's exit status is `tee`'s,
+      # which is always 0, and a failing suite would report green.
+      - name: Tests with coverage
+        run: |
+          set -o pipefail
+          npm run test:coverage 2>&1 | tee "$RUNNER_TEMP/server-tests.log"
+      # Runs whatever the previous step did — a red run is exactly when someone
+      # wants the counts — and puts them on the run page, which is publicly
+      # readable, unlike the job log.
+      - name: Publish summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: node scripts/ci-summary.mjs server "$RUNNER_TEMP/server-tests.log" >> "$GITHUB_STEP_SUMMARY"
 
   # One Prettier config at the repository root covers both packages *and* the
   # root scripts, so there is a single source of truth for style instead of two
@@ -47,7 +60,8 @@ jobs:
 
   # The STUN codec behind `npm run check:turn` is checked against the published
   # test vectors in RFC 5769. Neither the script nor its test has any
-  # dependencies, so this job needs no install step at all.
+  # dependencies, so this job needs no install step at all — which is also why
+  # `scripts/ci-summary.mjs` has to parse the output rather than measure it.
   scripts:
     name: Scripts (STUN test vectors)
     runs-on: ubuntu-latest
@@ -56,7 +70,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm run test:scripts
+      - name: Tests
+        run: |
+          set -o pipefail
+          npm run test:scripts 2>&1 | tee "$RUNNER_TEMP/scripts-tests.log"
+      - name: Publish summary
+        if: always()
+        run: node scripts/ci-summary.mjs scripts "$RUNNER_TEMP/scripts-tests.log" >> "$GITHUB_STEP_SUMMARY"
 
   client:
     name: Client (lint + test + build)
@@ -75,5 +95,12 @@ jobs:
       - run: npm run lint
       # Vitest, scoped to `src/lib` — the client's WebRTC helpers and the caps it
       # mirrors from the server. `environment: node`, no browser needed.
-      - run: npm run test:coverage
+      - name: Tests with coverage
+        run: |
+          set -o pipefail
+          npm run test:coverage 2>&1 | tee "$RUNNER_TEMP/client-tests.log"
+      - name: Publish summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: node scripts/ci-summary.mjs client "$RUNNER_TEMP/client-tests.log" >> "$GITHUB_STEP_SUMMARY"
       - run: npm run build
