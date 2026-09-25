@@ -72,7 +72,9 @@ describe('abuse protection', () => {
   test('a transcript at the cap is accepted', async () => {
     const { meeting } = await fixture();
 
-    const res = await summarize(meeting._id, { transcript: 'x'.repeat(limits.MAX_TRANSCRIPT_CHARS) });
+    const res = await summarize(meeting._id, {
+      transcript: 'x'.repeat(limits.MAX_TRANSCRIPT_CHARS),
+    });
 
     assert.equal(res.status, 200);
     assert.equal(res.body.engine, 'offline-extractive');
@@ -102,7 +104,10 @@ describe('abuse protection', () => {
 
     assert.equal(res.status, 200);
     assert.ok(doc.transcript.length <= limits.MAX_TRANSCRIPT_CHARS);
-    assert.ok(doc.transcript.length > limits.MAX_TRANSCRIPT_CHARS - 600, 'should be filled, not empty');
+    assert.ok(
+      doc.transcript.length > limits.MAX_TRANSCRIPT_CHARS - 600,
+      'should be filled, not empty',
+    );
     // The tail is kept: the last message must survive truncation.
     assert.match(doc.transcript, /message 59/);
   });
@@ -166,6 +171,32 @@ describe('abuse protection', () => {
     assert.equal(doc.chatMessages.length, 0);
     listener.disconnect();
     outsider.disconnect();
+  });
+
+  test('one account cannot create meetings without limit', async () => {
+    // A user of its own: the budget is per account, and the earlier tests in this
+    // suite have been creating meetings as the host.
+    const spammer = await signup('Spammer', 'meeting-spam@test.dev');
+    const { max } = limits.MEETING_RATE_LIMIT;
+
+    for (let i = 0; i < max; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const created = await createMeeting(spammer.token, `Spam ${i}`);
+      assert.ok(created?.roomCode, `meeting ${i + 1} of ${max} should be created`);
+    }
+
+    const rejected = await api('/api/meetings', {
+      method: 'POST',
+      token: spammer.token,
+      body: { title: 'one too many' },
+    });
+
+    assert.equal(rejected.status, 429);
+    assert.match(rejected.body.error, /too many meetings/i);
+
+    // Another account is unaffected — the budget is per account, not global.
+    const fine = await createMeeting(host.token, 'Legitimate');
+    assert.ok(fine.roomCode);
   });
 
   test('summaries are rate limited per user, not per IP', async () => {

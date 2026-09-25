@@ -60,6 +60,28 @@ function listOf(value) {
     .filter(Boolean);
 }
 
+/** Where the client runs when nobody said otherwise. */
+const DEFAULT_ORIGINS = ['http://localhost:5173'];
+
+/**
+ * The origins actually handed to CORS.
+ *
+ * `*` is stripped rather than honoured. With `credentials: true` a wildcard is
+ * useless anyway — a browser refuses `Access-Control-Allow-Origin: *` on a
+ * credentialed request — so allowing it here would turn "allow everything" into
+ * "silently allow nothing", which is the hardest kind of CORS failure to read.
+ * An empty list after stripping falls back to the local client, so development
+ * stays usable and the warning below is what names the mistake.
+ */
+function allowedOrigins(env = process.env) {
+  const configured = listOf(env.CLIENT_ORIGIN);
+  const origins = configured.filter((origin) => origin !== '*');
+  return {
+    origins: origins.length > 0 ? origins : DEFAULT_ORIGINS,
+    wildcard: configured.includes('*'),
+  };
+}
+
 /**
  * What to hand `app.set('trust proxy', …)`.
  *
@@ -90,68 +112,80 @@ const isVerificationRequired = (env) => env.EMAIL_VERIFICATION_REQUIRED !== 'fal
 /**
  * The things wrong with this deployment, in the order they would embarrass you.
  *
- * Only production is checked. Locally, localhost origins and an unset mailer are
- * correct — the console transport exists for exactly that — and a warning that
- * fires on every healthy dev boot is a warning nobody reads.
+ * Almost all of it is production-only: locally, localhost origins and an unset
+ * mailer are correct — the console transport exists for exactly that — and a
+ * warning that fires on every healthy dev boot is a warning nobody reads. The
+ * exception is the wildcard origin below, which is a mistake anywhere and just
+ * as invisible locally.
  */
 function deploymentWarnings(env = process.env) {
-  if (env.NODE_ENV !== 'production') return [];
-
   const warnings = [];
+
+  // Checked in every environment: a wildcard origin is never what was meant, and
+  // locally it is just as invisible (the browser reports an opaque CORS failure,
+  // not "your wildcard was ignored").
+  if (allowedOrigins(env).wildcard) {
+    warnings.push(
+      'CLIENT_ORIGIN is "*", which a browser refuses on a credentialed request: no client origin is allowed at all. List the exact origin instead, scheme included.',
+    );
+  }
+
+  if (env.NODE_ENV !== 'production') return warnings;
+
   const secret = String(env.JWT_SECRET ?? '');
 
   if (!secret) {
     warnings.push(
-      'JWT_SECRET is not set: every signup, login and demo click fails with a 500, and no session can be issued.'
+      'JWT_SECRET is not set: every signup, login and demo click fails with a 500, and no session can be issued.',
     );
   } else if (secret.length < MIN_SECRET_LENGTH || PLACEHOLDER_SECRETS.has(secret.toLowerCase())) {
     warnings.push(
-      `JWT_SECRET is ${secret.length} characters or a known placeholder: anyone who guesses it can mint a token for any account, host included. Use a long random value.`
+      `JWT_SECRET is ${secret.length} characters or a known placeholder: anyone who guesses it can mint a token for any account, host included. Use a long random value.`,
     );
   }
 
   const origins = listOf(env.CLIENT_ORIGIN);
   if (origins.length === 0) {
     warnings.push(
-      'CLIENT_ORIGIN is not set, so it defaults to http://localhost:5173 and the browser blocks every request from the deployed client with a CORS error.'
+      'CLIENT_ORIGIN is not set, so it defaults to http://localhost:5173 and the browser blocks every request from the deployed client with a CORS error.',
     );
   } else {
     const local = origins.filter((origin) => LOOPBACK.test(origin));
     if (local.length > 0) {
       warnings.push(
-        `CLIENT_ORIGIN still contains ${local.join(', ')}: the deployed client's origin must be listed too, exactly, or the browser gets an opaque CORS failure.`
+        `CLIENT_ORIGIN still contains ${local.join(', ')}: the deployed client's origin must be listed too, exactly, or the browser gets an opaque CORS failure.`,
       );
     }
   }
 
   if (!envFlag('DEMO_LOGIN_ENABLED', { env })) {
     warnings.push(
-      'DEMO_LOGIN_ENABLED is off, so the one-click demo path answers 403: the highest-weighted rubric item (core functionality without sign-up) cannot be reached at all.'
+      'DEMO_LOGIN_ENABLED is off, so the one-click demo path answers 403: the highest-weighted rubric item (core functionality without sign-up) cannot be reached at all.',
     );
   }
 
   if (isVerificationRequired(env) && !env.MAIL_WEBHOOK_URL) {
     warnings.push(
-      'EMAIL_VERIFICATION_REQUIRED is on (the default) but MAIL_WEBHOOK_URL is unset, and production sends no mail without it: an account claimed from the demo can never be verified and login for it stays refused. Set MAIL_WEBHOOK_URL, or set EMAIL_VERIFICATION_REQUIRED=false to trust a claim immediately.'
+      'EMAIL_VERIFICATION_REQUIRED is on (the default) but MAIL_WEBHOOK_URL is unset, and production sends no mail without it: an account claimed from the demo can never be verified and login for it stays refused. Set MAIL_WEBHOOK_URL, or set EMAIL_VERIFICATION_REQUIRED=false to trust a claim immediately.',
     );
   }
 
   const base = String(env.APP_BASE_URL ?? '');
   if (isVerificationRequired(env) && (!base || LOOPBACK.test(base))) {
     warnings.push(
-      `APP_BASE_URL is ${base ? `"${base}"` : 'unset'}, so a confirmation link points at a machine only you have; it must be the URL people reach the app at.`
+      `APP_BASE_URL is ${base ? `"${base}"` : 'unset'}, so a confirmation link points at a machine only you have; it must be the URL people reach the app at.`,
     );
   }
 
   if (env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length < MIN_ADMIN_TOKEN_LENGTH) {
     warnings.push(
-      `ADMIN_TOKEN is only ${String(env.ADMIN_TOKEN).length} characters: it guards the guest sweep endpoint, so it has to be unguessable rather than memorable.`
+      `ADMIN_TOKEN is only ${String(env.ADMIN_TOKEN).length} characters: it guards the guest sweep endpoint, so it has to be unguessable rather than memorable.`,
     );
   }
 
   if (trustProxySetting(env) === false) {
     warnings.push(
-      'TRUST_PROXY is off behind a platform proxy, so every request looks like it came from the proxy: one rate-limit budget shared by all visitors, and ~30 demo clicks in 15 minutes stops the path answering.'
+      'TRUST_PROXY is off behind a platform proxy, so every request looks like it came from the proxy: one rate-limit budget shared by all visitors, and ~30 demo clicks in 15 minutes stops the path answering.',
     );
   }
 
@@ -167,10 +201,12 @@ function deploymentSummary(env = process.env) {
     nodeEnv: env.NODE_ENV || 'development',
     trustProxy: trustProxySetting(env),
     demoEnabled: envFlag('DEMO_LOGIN_ENABLED', { env }),
-    origins: listOf(env.CLIENT_ORIGIN),
+    origins: allowedOrigins(env).origins,
     verificationRequired: isVerificationRequired(env),
     mailerConfigured: Boolean(env.MAIL_WEBHOOK_URL),
     adminEndpoints: Boolean(env.ADMIN_TOKEN),
+    logLevel: env.LOG_LEVEL || 'info',
+    logFormat: env.LOG_FORMAT || (env.NODE_ENV === 'production' ? 'json' : 'pretty'),
     warnings: deploymentWarnings(env),
   };
 }
@@ -182,12 +218,15 @@ function deploymentSummary(env = process.env) {
 function logDeploymentWarnings(warnings = deploymentWarnings(), log = console) {
   if (warnings.length === 0) return 0;
 
-  log.warn(`[config] ${warnings.length} deployment warning(s) — this deployment is not ready to show anyone:`);
+  log.warn(
+    `[config] ${warnings.length} deployment warning(s) — this deployment is not ready to show anyone:`,
+  );
   for (const warning of warnings) log.warn(`[config]   • ${warning}`);
   return warnings.length;
 }
 
 module.exports = {
+  allowedOrigins,
   deploymentSummary,
   deploymentWarnings,
   envFlag,

@@ -3,6 +3,7 @@ const { isValidObjectId } = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const Meeting = require('../models/Meeting');
 const limits = require('../config/limits');
+const { log } = require('../lib/logger');
 const { requireAuth } = require('../middleware/auth');
 const { generateRoomCode } = require('../services/roomCode');
 const { summarizeMeeting } = require('../services/aiService');
@@ -20,6 +21,19 @@ const summarizeLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id || req.ip,
   message: { error: 'Too many summaries requested. Try again in a few minutes.' },
+});
+
+// Room codes are unique and the collection grows with every meeting, so an
+// account that scripts this endpoint can fill the database on its own. Aimed at
+// that and nothing else: the ceiling is high enough that no person holding a
+// meeting will ever see it.
+const createLimiter = rateLimit({
+  windowMs: limits.MEETING_RATE_LIMIT.windowMs,
+  limit: limits.MEETING_RATE_LIMIT.max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  message: { error: 'Too many meetings created. Try again in a few minutes.' },
 });
 
 /**
@@ -58,16 +72,15 @@ async function requireMeetingAccess(req, res, next) {
   }
 }
 
-
 // Create a new meeting (returns a shareable room code)
-router.post('/', async (req, res) => {
+router.post('/', createLimiter, async (req, res) => {
   try {
     const { title } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required.' });
     if (typeof title !== 'string' || title.trim().length > limits.MAX_TITLE_CHARS) {
-      return res
-        .status(413)
-        .json({ error: `title must be a string of ${limits.MAX_TITLE_CHARS} characters or fewer.` });
+      return res.status(413).json({
+        error: `title must be a string of ${limits.MAX_TITLE_CHARS} characters or fewer.`,
+      });
     }
 
     let roomCode;
@@ -80,7 +93,8 @@ router.post('/', async (req, res) => {
         break;
       }
     }
-    if (!roomCode) return res.status(500).json({ error: 'Could not allocate a room code, try again.' });
+    if (!roomCode)
+      return res.status(500).json({ error: 'Could not allocate a room code, try again.' });
 
     const meeting = await Meeting.create({
       title,
@@ -91,7 +105,7 @@ router.post('/', async (req, res) => {
 
     return res.status(201).json(meeting);
   } catch (err) {
-    console.error('[meetings/create]', err);
+    log.error('could not create meeting', { scope: 'meetings/create', userId: req.user?.id, err });
     return res.status(500).json({ error: 'Could not create meeting.' });
   }
 });
@@ -106,7 +120,7 @@ router.get('/', async (req, res) => {
       .limit(50);
     return res.json(meetings);
   } catch (err) {
-    console.error('[meetings/list]', err);
+    log.error('could not list meetings', { scope: 'meetings/list', userId: req.user?.id, err });
     return res.status(500).json({ error: 'Could not load meetings.' });
   }
 });
@@ -121,7 +135,7 @@ router.get('/room/:roomCode', async (req, res) => {
     }
     return res.json(meeting);
   } catch (err) {
-    console.error('[meetings/room]', err);
+    log.error('could not look up room', { scope: 'meetings/room', err });
     return res.status(500).json({ error: 'Could not look up meeting.' });
   }
 });
@@ -176,7 +190,11 @@ router.delete('/:id/participants/:userId', async (req, res) => {
 
     return res.json({ userId, banned: ban, evictedSockets, participants: meeting.participants });
   } catch (err) {
-    console.error('[meetings/remove-participant]', err);
+    log.error('could not remove participant', {
+      scope: 'meetings/remove-participant',
+      userId: req.user?.id,
+      err,
+    });
     return res.status(500).json({ error: 'Could not remove participant.' });
   }
 });
@@ -233,9 +251,13 @@ router.post('/:id/summarize', requireMeetingAccess, summarizeLimiter, async (req
     }));
     await meeting.save();
 
-    return res.json({ summary: meeting.summary, actionItems: meeting.actionItems, engine: result.engine });
+    return res.json({
+      summary: meeting.summary,
+      actionItems: meeting.actionItems,
+      engine: result.engine,
+    });
   } catch (err) {
-    console.error('[meetings/summarize]', err);
+    log.error('summarize failed', { scope: 'meetings/summarize', userId: req.user?.id, err });
     return res.status(500).json({ error: 'Could not generate summary.' });
   }
 });

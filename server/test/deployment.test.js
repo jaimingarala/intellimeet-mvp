@@ -12,6 +12,7 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  allowedOrigins,
   deploymentSummary,
   deploymentWarnings,
   envFlag,
@@ -36,10 +37,7 @@ describe('boolean knobs', () => {
   test('unset and empty fall back to the documented default', () => {
     assert.equal(envFlag('DEMO_LOGIN_ENABLED', { env: {} }), true);
     assert.equal(envFlag('DEMO_LOGIN_ENABLED', { env: { DEMO_LOGIN_ENABLED: '' } }), true);
-    assert.equal(
-      envFlag('DEMO_LOGIN_ENABLED', { env: { DEMO_LOGIN_ENABLED: '  ' } }),
-      true
-    );
+    assert.equal(envFlag('DEMO_LOGIN_ENABLED', { env: { DEMO_LOGIN_ENABLED: '  ' } }), true);
     assert.equal(envFlag('GUEST_RETENTION_ENABLED', { env: {}, fallback: false }), false);
   });
 
@@ -48,7 +46,7 @@ describe('boolean knobs', () => {
       assert.equal(
         envFlag('DEMO_LOGIN_ENABLED', { env: { DEMO_LOGIN_ENABLED: value } }),
         false,
-        `${value} should disable the knob`
+        `${value} should disable the knob`,
       );
     }
     assert.equal(envFlag('DEMO_LOGIN_ENABLED', { env: { DEMO_LOGIN_ENABLED: 'true' } }), true);
@@ -77,7 +75,7 @@ describe('trust proxy', () => {
   test('anything non-numeric is left for Express to interpret as an address list', () => {
     assert.equal(
       trustProxySetting({ TRUST_PROXY: 'loopback, 10.0.0.0/8' }),
-      'loopback, 10.0.0.0/8'
+      'loopback, 10.0.0.0/8',
     );
   });
 });
@@ -90,7 +88,7 @@ describe('deployment warnings', () => {
   test('development is never nagged — localhost origins and no mailer are correct there', () => {
     assert.deepEqual(
       deploymentWarnings({ NODE_ENV: 'development', CLIENT_ORIGIN: 'http://localhost:5173' }),
-      []
+      [],
     );
   });
 
@@ -113,7 +111,7 @@ describe('deployment warnings', () => {
 
   test('a mixed origin list is reported for the entry that is wrong, not the whole list', () => {
     const warnings = deploymentWarnings(
-      goodProduction({ CLIENT_ORIGIN: 'https://intellimeet.vercel.app,http://localhost:5173' })
+      goodProduction({ CLIENT_ORIGIN: 'https://intellimeet.vercel.app,http://localhost:5173' }),
     );
     assert.equal(warnings.length, 1);
     assert.doesNotMatch(warnings[0], /https:\/\/intellimeet\.vercel\.app:/);
@@ -138,7 +136,7 @@ describe('deployment warnings', () => {
         MAIL_WEBHOOK_URL: '',
         APP_BASE_URL: '',
         EMAIL_VERIFICATION_REQUIRED: 'false',
-      })
+      }),
     );
     assert.deepEqual(warnings, []);
   });
@@ -178,7 +176,7 @@ describe('deployment warnings', () => {
         APP_BASE_URL: '',
         ADMIN_TOKEN: 'admin',
         TRUST_PROXY: 'false',
-      })
+      }),
     );
     assert.equal(warnings.length, 7);
     for (const pattern of [
@@ -205,7 +203,9 @@ describe('reporting', () => {
 
   test('each warning is logged, prefixed, and counted', () => {
     const calls = [];
-    const logged = logDeploymentWarnings(['one', 'two'], { warn: (...args) => calls.push(args.join(' ')) });
+    const logged = logDeploymentWarnings(['one', 'two'], {
+      warn: (...args) => calls.push(args.join(' ')),
+    });
 
     assert.equal(logged, 2);
     assert.equal(calls.length, 3); // the header, then one line each
@@ -216,7 +216,7 @@ describe('reporting', () => {
 
   test('the summary carries the warnings, the shape — and no secret values', () => {
     const summary = deploymentSummary(
-      goodProduction({ JWT_SECRET: 'a'.repeat(48), DEMO_LOGIN_ENABLED: 'false' })
+      goodProduction({ JWT_SECRET: 'a'.repeat(48), DEMO_LOGIN_ENABLED: 'false' }),
     );
 
     assert.equal(summary.nodeEnv, 'production');
@@ -227,5 +227,50 @@ describe('reporting', () => {
     assert.equal(summary.mailerConfigured, true);
     assert.equal(summary.warnings.length, 1);
     assert.equal(JSON.stringify(summary).includes('a'.repeat(48)), false);
+  });
+
+  test('the summary says how this process logs, so an operator can see it', () => {
+    assert.equal(deploymentSummary({}).logLevel, 'info');
+    assert.equal(deploymentSummary({}).logFormat, 'pretty');
+
+    const production = deploymentSummary({ NODE_ENV: 'production', LOG_LEVEL: 'warn' });
+    assert.equal(production.logLevel, 'warn');
+    assert.equal(production.logFormat, 'json');
+  });
+});
+
+describe('allowed origins', () => {
+  test('a wildcard is stripped rather than honoured', () => {
+    // With credentials a browser refuses `Access-Control-Allow-Origin: *`, so
+    // "allow everything" would silently become "allow nothing".
+    const wildcard = allowedOrigins({ CLIENT_ORIGIN: '*' });
+
+    assert.equal(wildcard.wildcard, true);
+    assert.deepEqual(wildcard.origins, ['http://localhost:5173']);
+  });
+
+  test('a wildcard alongside a real origin leaves the real one standing', () => {
+    const mixed = allowedOrigins({ CLIENT_ORIGIN: '*,https://intellimeet.vercel.app' });
+
+    assert.equal(mixed.wildcard, true);
+    assert.deepEqual(mixed.origins, ['https://intellimeet.vercel.app']);
+  });
+
+  test('an ordinary list is passed through, and unset falls back to the local client', () => {
+    assert.deepEqual(allowedOrigins({ CLIENT_ORIGIN: 'https://a.dev, https://b.dev' }).origins, [
+      'https://a.dev',
+      'https://b.dev',
+    ]);
+    assert.deepEqual(allowedOrigins({}).origins, ['http://localhost:5173']);
+    assert.equal(allowedOrigins({}).wildcard, false);
+  });
+
+  test('the wildcard warning fires outside production too, where it is just as invisible', () => {
+    assert.match(
+      deploymentWarnings({ NODE_ENV: 'development', CLIENT_ORIGIN: '*' }).join('\n'),
+      /CLIENT_ORIGIN is "\*"/,
+    );
+    // ...and nothing else does.
+    assert.deepEqual(deploymentWarnings({ NODE_ENV: 'development' }), []);
   });
 });

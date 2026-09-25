@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const Meeting = require('../models/Meeting');
 const limits = require('../config/limits');
+const { log } = require('../lib/logger');
 
 /**
  * Socket.io namespace-free setup: one room per meeting roomCode.
@@ -15,8 +16,52 @@ const limits = require('../config/limits');
 // endpoint) can reach into the live room and evict a socket.
 let ioRef = null;
 
+/** Recent chat timestamps per user, for the flood cap below. */
+const chatWindow = new Map();
+
 function isBanned(meeting, userId) {
   return (meeting.banned || []).some((b) => b.toString() === userId);
+}
+
+/**
+ * How many bytes this payload serialises to, or Infinity if it can't be
+ * serialised at all — in which case refusing it is the only safe answer.
+ */
+function payloadSize(value) {
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * Whether this user has used up their chat budget for the window.
+ *
+ * Keyed by user rather than by socket on purpose: a second tab shares the
+ * budget, and reconnecting does not hand out a fresh one. Entries are dropped
+ * once their window is empty, so the map tracks the people who are talking
+ * rather than everyone who ever did.
+ */
+function chatFlooding(userId) {
+  const { windowMs, max } = limits.CHAT_RATE_LIMIT;
+  const now = Date.now();
+
+  if (chatWindow.size > 500) {
+    for (const [key, times] of chatWindow) {
+      if (times.every((at) => now - at >= windowMs)) chatWindow.delete(key);
+    }
+  }
+
+  const recent = (chatWindow.get(userId) || []).filter((at) => now - at < windowMs);
+  if (recent.length >= max) {
+    chatWindow.set(userId, recent);
+    return true;
+  }
+
+  recent.push(now);
+  chatWindow.set(userId, recent);
+  return false;
 }
 
 /**
@@ -88,7 +133,21 @@ function registerSocketHandlers(io) {
   io.on('connection', (socket) => {
     let currentRoom = null;
 
-    socket.on('join-room', async ({ roomCode }) => {
+    // Payloads are guarded rather than destructured into the handler signature.
+    // `async ({ roomCode }) => …` throws on a client that emits with no argument,
+    // and a throw inside an async listener is an unhandled rejection: the server
+    // would log nothing and the client would hang instead of being told.
+    socket.on('join-room', async (payload) => {
+      const roomCode = payload?.roomCode;
+      if (
+        typeof roomCode !== 'string' ||
+        roomCode.length === 0 ||
+        roomCode.length > limits.MAX_ROOM_CODE_CHARS
+      ) {
+        socket.emit('error-message', { error: 'A valid roomCode is required.' });
+        return;
+      }
+
       try {
         const meeting = await Meeting.findOne({ roomCode });
         if (!meeting) {
@@ -121,7 +180,12 @@ function registerSocketHandlers(io) {
         socket.emit('room-users', { peers });
         socket.to(roomCode).emit('peer-joined', { socketId: socket.id, name: socket.user.name });
       } catch (err) {
-        console.error('[socket/join-room]', err);
+        log.error('join-room failed', {
+          scope: 'socket/join-room',
+          userId: socket.user?.id,
+          roomCode,
+          err,
+        });
         socket.emit('error-message', { error: 'Could not join room.' });
       }
     });
@@ -131,14 +195,27 @@ function registerSocketHandlers(io) {
     // Both the sender and the target must be in the same joined room, otherwise
     // a member could relay signals at sockets outside the meeting (or an
     // outsider could probe reachable socket ids).
-    socket.on('signal', ({ to, data }) => {
-      if (!to || !currentRoom) return;
+    socket.on('signal', (payload) => {
+      const { to, data } = payload || {};
+      if (typeof to !== 'string' || !currentRoom) return;
+
+      // Opaque to the server, but not unbounded: without this the relay would
+      // happily move arbitrary amounts of data between two members. A real offer
+      // with a full codec list is a few KB.
+      if (payloadSize(data) > limits.MAX_SIGNAL_CHARS) {
+        socket.emit('error-message', {
+          error: `Signalling payloads are limited to ${limits.MAX_SIGNAL_CHARS} characters.`,
+        });
+        return;
+      }
+
       const target = io.sockets.sockets.get(to);
       if (!target || !target.rooms.has(currentRoom)) return;
       io.to(to).emit('signal', { from: socket.id, name: socket.user.name, data });
     });
 
-    socket.on('chat-message', async ({ roomCode, text }) => {
+    socket.on('chat-message', async (payload) => {
+      const { roomCode, text } = payload || {};
       if (!roomCode || typeof text !== 'string' || !text.trim()) return;
       // Membership isn't enough: the sender has to be *in* this room, otherwise a
       // participant who never joined could broadcast into it.
@@ -147,6 +224,12 @@ function registerSocketHandlers(io) {
         socket.emit('error-message', {
           error: `Messages are limited to ${limits.MAX_CHAT_MESSAGE_CHARS} characters.`,
         });
+        return;
+      }
+      // Each message is a database write and a broadcast to everyone in the
+      // room, so a stuck client or a loop can cost the whole meeting.
+      if (chatFlooding(String(socket.user.id))) {
+        socket.emit('error-message', { error: 'You are sending messages too quickly.' });
         return;
       }
       try {
@@ -162,7 +245,7 @@ function registerSocketHandlers(io) {
             roomCode,
             $or: [{ host: socket.user.id }, { participants: socket.user.id }],
           },
-          { $push: { chatMessages: message } }
+          { $push: { chatMessages: message } },
         );
         if (result.modifiedCount === 0) {
           socket.emit('error-message', { error: 'You are not a member of this room.' });
@@ -170,7 +253,12 @@ function registerSocketHandlers(io) {
         }
         io.in(roomCode).emit('chat-message', message);
       } catch (err) {
-        console.error('[socket/chat-message]', err);
+        log.error('chat relay failed', {
+          scope: 'socket/chat-message',
+          userId: socket.user?.id,
+          roomCode,
+          err,
+        });
       }
     });
 
@@ -192,4 +280,11 @@ function registerSocketHandlers(io) {
   });
 }
 
-module.exports = { registerSocketHandlers, evictUserFromRoom, isBanned, getLiveSession };
+module.exports = {
+  registerSocketHandlers,
+  evictUserFromRoom,
+  isBanned,
+  getLiveSession,
+  chatFlooding,
+  payloadSize,
+};
