@@ -70,16 +70,19 @@ the cross-network half, which needs a second device.
 
 | ID | Task | Notes |
 |---|---|---|
-| P2.1 | Test runner + harness, `npm test` on the server | Use the built-in `node:test` runner — **zero new dependencies**. The pattern is already proven: boot express + socket.io on an ephemeral port and stub the Mongoose models, no MongoDB needed. |
-| P2.2 | Suites: auth, meeting access control, moderation (remove/ban/rejoin), socket relay scoping, ICE queue | The last two turns' throwaway verification harnesses are ~80% of this already. |
-| P2.3 | Client unit tests for `src/lib/webrtc.js` | **Decision needed**: vitest (one dev dependency) is the sane way; otherwise leave the client untested and say so. |
-| P2.4 | ESLint + Prettier (both packages) + `npm run lint` | The source already carries `eslint-disable` comments, so the intent exists; nothing enforces it today. |
-| P2.5 | GitHub Actions CI: `npm ci` → lint → test → build, both packages | Fails fast; doubles as the P1.5 keep-alive host. |
-| P2.6 | Security hardening | Body/size limits (title, chat, transcript), rate-limit the meeting + AI routes (the summarize endpoint can burn OpenAI credits and is currently unthrottled), CORS locked to deployed origins, socket payload caps, secrets never committed. Also decide: **enforce the `role` field or delete it** — it is currently decorative. |
-| P2.7 | Observability: request logging + error handler, optional Sentry free tier | Replaces `console.error`-only. Feeds the "Deployment & reliability" 10% and the report's ops section. |
+| P2.1 | ✅ Test runner + harness | Node's built-in `node:test` — **no new dependency on the server**. `test/helpers/app.js` boots the real `src/index.js` on a free port with `fake-db.js` swapping the Mongoose models and the DB connector out, so the suites also cover the real middleware order, the 404 and the error handler. Nothing needs MongoDB, Docker, a `.env` or a paid account. |
+| P2.2 | ✅ Suites: auth, meeting access, moderation, socket relay scoping, ICE queue | Fifteen suites and 165 tests at the end of this phase. The gaps closed were the ones a demo never surfaces: a socket payload with **no argument at all** (which used to throw inside an async listener and tell the client nothing), a chat flood, the meeting-creation cap, and the wildcard-origin case. |
+| P2.3 | ✅ Client unit tests — **decided: vitest** | One dev dependency, scoped to `src/lib`: `webrtc.js` and the caps the client mirrors from the server (a mirror nothing else enforced — the test reads the server's file from disk). 100% of lines, 97.6% of branches. Components are deliberately untested: a renderer with a mocked socket mostly asserts that React works, and the demo path is rehearsed in a browser instead. |
+| P2.4 | ✅ ESLint + Prettier + `npm run lint` / `npm run format:check` | ESLint was already in both packages. One Prettier config and ignore file at the **root**, covering both packages *and* `scripts/`, so there is a single source of truth instead of two that can disagree. Enabling the check meant formatting the tree once, in its own commit. |
+| P2.5 | ✅ GitHub Actions CI | Four jobs: server (lint + coverage), format, scripts (STUN vectors, no install step) and client (lint + coverage + build). No database service anywhere, so it doubles as the P1.5 keep-alive host. |
+| P2.6 | ✅ Security hardening | Rate caps for chat, meeting creation, room codes and signalling payloads alongside the existing transcript/title/chat limits; a `*` origin is stripped rather than honoured (a browser refuses a wildcard on a credentialed request, so honouring it means silently allowing nothing) and reported at boot; and the decorative `role` field was **deleted** rather than enforced — a claim no route reads reads as an authorization model that isn't there. |
+| P2.7 | ✅ Observability | `lib/logger.js` (JSON in production, readable locally, credential-shaped field names redacted, `LOG_LEVEL=silent` for tests) plus `middleware/observability.js`: a request id echoed in `X-Request-Id` and in every error body, one log line per completed request, and one error handler that classifies before it answers — a body over the limit is a `413` rather than a `500`, a CORS rejection is a `403` that names the setting, and a stack stays in the log. **Sentry is out**: it needs an account and a key, which the no-paid-service rule forbids for a judge's clone. |
 
 **Gate B:** CI green on a fresh clone with no database; lint clean; a defensible
-coverage number (rubric counts 30-50% as "intent").
+coverage number. All three hold locally: the server runs at ~92% of lines and 86%
+of branches, `client/src/lib` at 100% / 97.6%, and both floors are enforced by the
+`test:coverage` scripts, so CI fails if they slip. Every job runs without MongoDB,
+Docker or a `.env`. What is left is running it on GitHub rather than here.
 
 ## Phase 3 — Feature gaps, ordered by demo value per unit of effort  ·  20% collectively
 
@@ -142,11 +145,22 @@ here's why" reads better than a checkbox that falls over in the demo.
 | AI-generated docs/video vs the plagiarism rule | Docs, video, and reflection must be your own words and your own demo |
 | Feature work squeezing out the 70% | Gate A and B close before Phase 3 starts |
 
-## Needs you (accounts / decisions)
+## Needs you (accounts)
 
 - GitHub repo (public) to push to; Render + Vercel + Atlas accounts.
 - A `DEMO_API_URL` repository variable, or the keep-alive workflow does nothing.
 - TURN credentials for the deployed demo (the local coturn in `turn/` proves the relay path without one).
-- Decision: add vitest for client tests, or leave the client untested (P2.3).
-- Decision: commit the brief `Zidio Web.pdf` or keep it out (P0.3).
-- Decision: enforce or remove the unused `role` field (P2.6).
+- Decision still open: commit the brief `Zidio Web.pdf` or keep it out (P0.3).
+
+## Decisions taken
+
+- **Client tests (P2.3):** vitest, one dev dependency, scoped to `src/lib`. The
+alternative — leaving the client untested and saying so — was rejected because
+`webrtc.js` is exactly the file where a bug is invisible until two peers fail to
+connect, and there is no error to read when it happens.
+- **Prettier (P2.4):** one config at the repository root rather than one per
+package, because two configs that can disagree are worse than none.
+- **The `role` field (P2.6):** deleted. Nobody read it; keeping it would have
+meant inventing an admin path to justify it, which is Phase 3 work at best.
+- **Sentry (P2.7):** not adopted. Optional in the plan, and it would put a key
+and an account between a judge and a working clone.

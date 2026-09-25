@@ -28,8 +28,9 @@ gh pr create --fill                     # or open the PR in the GitHub UI
 ```
 
 The PR template will prompt for what changed, how it was verified, and a
-checklist. CI (`.github/workflows/ci.yml`) runs lint + tests for the server and
-lint + build for the client; it must be green before merging.
+checklist. CI (`.github/workflows/ci.yml`) runs lint, tests and a coverage floor
+for both packages, a Prettier check over the whole repo, and the client build; it
+must be green before merging.
 
 > A GitHub remote isn't configured yet, so the push/PR steps only work once it
 > is (see `NEXT-MILESTONE.md`, P0.5). Until then it's fine to commit straight to
@@ -114,10 +115,18 @@ git config commit.template .gitmessage
 Run exactly what CI runs:
 
 ```bash
-cd server && npm run lint && npm test        # npm run test:coverage for the report
-cd ../client && npm run lint && npm run build
-npm run test:scripts                         # STUN codec, from the repository root
+npm ci                                       # once, from the repository root
+npm run format:check                         # Prettier, over the whole repo
+cd server && npm run lint && npm run test:coverage
+cd ../client && npm run lint && npm run test:coverage && npm run build
+cd .. && npm run test:scripts                # STUN codec
 ```
+
+`test:coverage` is `npm test` plus the report, and it exits non-zero below a
+floor (85% lines / 70% branches on the server, 95% / 90% on the client), so the
+figure CI prints is enforced rather than decorative. Everything here is also
+available from the root: `npm run lint`, `npm run test`, `npm run format`,
+`npm run build`.
 
 Two things that trip people up:
 
@@ -131,22 +140,27 @@ Two things that trip people up:
 ## Tests
 
 - **Server**: Node's built-in `node:test` runner, files under `server/test/`.
-  Twelve suites today — `admin`, `auth`, `capacity`, `claim`,
-  `email-verification`, `guest`, `guest-retention`, `indexes`, `meeting-access`,
-  `moderation`, `hardening` and `socket`. A new route belongs in the suite that
-  matches its concern; a new socket event belongs in `socket.test.js`, alongside
-  the existing join / chat relay / moderation event coverage.
+  Fifteen suites today — `admin`, `auth`, `capacity`, `claim`, `deployment`,
+  `email-verification`, `guest`, `guest-retention`, `hardening`, `indexes`,
+  `meeting-access`, `moderation`, `observability`, `socket` and
+  `socket-payloads` — plus three shared helpers. A new route belongs in the suite
+  that matches its concern; a new socket event belongs in `socket.test.js`
+  (protocol) or `socket-payloads.test.js` (what a client is allowed to send).
 
   `email-verification` follows the real flow — it reads the one-time link out of
   the mailer's in-memory outbox and spends it over HTTP — rather than setting the
   flag on the model, so the token plumbing is covered too. Suites that claim an
   account must expect `emailVerified: false` unless they turn
   `EMAIL_VERIFICATION_REQUIRED` off themselves.
-- **Coverage** is around 88% of lines and 84% of branches via
+- **Coverage** is around 92% of lines and 86% of branches via
   `npm run test:coverage`. Don't let it drop: new behaviour should come with a
   test, or the PR should say why it can't.
-- **Client**: no test runner yet — `client/src/lib/webrtc.js` (the pure
-  ICE-queue and config logic) is the first thing worth covering.
+- **Client**: Vitest, scoped to `src/lib` — `webrtc.js` (the ICE-queue and ICE
+  server config, which is where a call silently fails to connect) and the caps
+  that mirror the server's. React components are not unit-tested: a renderer with
+  a mocked socket would mostly assert that React works, and the demo path is
+  rehearsed in a browser instead. `npm test` in `client/` runs it; the setup file
+  supplies the two WebRTC globals Node doesn't have.
 - **Scripts**: `node:test` again, under `scripts/test/`. Today that is the STUN
   codec behind `npm run check:turn`, pinned to the published test vectors in
   RFC 5769. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is

@@ -416,13 +416,17 @@ user before the server has to.
 | Pasted transcript | 20,000 characters | `POST /api/meetings/:id/summarize` → `413` |
 | Chat-derived transcript | 20,000 characters, keeping the most recent end | same route, applied while building the fallback |
 | Chat message | 2,000 characters | socket `chat-message` → `error-message` to the sender |
+| Chat messages | 30 per minute **per user** | socket `chat-message` → `error-message` to the sender |
 | Meeting title | 120 characters | `POST /api/meetings` → `413` |
 | Request body | 1 MB | `express.json({ limit: '1mb' })` |
+| Room code (socket) | 64 characters, must be a string | socket `join-room` → `error-message` |
+| Signalling payload | 20,000 characters of JSON | socket `signal` → `error-message`, never relayed |
 | Summaries | 10 per 15 minutes **per user** | `express-rate-limit` → `429` |
-| Signup / login attempts | 30 per 15 minutes per IP | `express-rate-limit` → `429` |
+| Meetings created | 30 per 15 minutes **per user** | `express-rate-limit` → `429` |
+| Signup / login / demo attempts | 30 per 15 minutes per IP | `express-rate-limit` → `429` |
 
-Size violations are `413`, malformed values are `400`, and the rate-limited
-summary response carries a `RateLimit-*` header set.
+Size violations are `413`, malformed values are `400`, and rate-limited
+responses carry a `RateLimit-*` header set.
 
 Worth knowing before deploying:
 
@@ -439,17 +443,58 @@ Worth knowing before deploying:
 - Chat **history** is not capped yet: `$push` grows a meeting's `chatMessages`
   array without bound. Fine for an MVP, but a retention policy
   (`$push` with `$slice`) is worth adding before rooms run for hours.
+- CORS comes from `CLIENT_ORIGIN`, but it is the browser's rule, not ours: it
+  stops a page from *reading* our responses, not a script from calling the API,
+  and the server always answers. Every route authorises on its own — JWT, plus
+  host-or-participant membership — which is the boundary that actually matters.
+  The configuration mistake that is worth catching (a `*` origin, which a browser
+  refuses on a credentialed request) is reported at boot and in
+  `GET /api/admin/stats`.
+- A signalling payload is relayed without being inspected (that is what makes
+  the relay cheap and codec-agnostic), but it is length-capped: "opaque" is not
+  the same as "unbounded".
+- `npm audit` reports advisories in the client's tree that are **not** fixed
+  here: `react-router-dom` 6.x (two open-redirect / SSR-hydration issues, fixed
+  in 7.x) and, in devDependencies only, `esbuild`/`vite` and Vitest's mock server.
+  The server's tree is clean. Deferred because the React Router fix is a major
+  version that re-touches every screen — this app navigates only to
+  server-generated room codes and does not server-render, so the reachable path
+  is narrow, but "narrow" is not "nothing" and it should be done before this
+  handles real accounts.
 - Anyone who can read a meeting can currently overwrite its transcript and
   summary — only the host is prevented from being removed. Restricting summary
   generation to the host is a product decision, not yet made.
+
+## Logging and errors
+
+Every request is given an id — its own, or the `X-Request-Id` a proxy sent —
+which comes back in the response header and in every error body:
+
+```json
+{ "error": "Internal server error.", "requestId": "0f6d1a3e-…" }
+```
+
+That is the difference between a visitor saying "it broke" and you finding the
+line that broke it. One line is logged per completed request and one per
+failure: `json` in production (what a platform's log viewer wants) and
+`pretty` in development, configurable with `LOG_FORMAT` and `LOG_LEVEL`.
+
+Failures are classified before they are reported: an API that answers `500` for a
+body over the size limit sends you looking for a bug that doesn't exist, so that
+is a `413`. Stacks go to the log, never to the response, and
+fields whose *names* look like credentials (`password`, `token`, `authorization`,
+`apiKey`, …) are redacted on the way in. `GET /api/admin/stats` reports the
+level, format and `trustProxy` setting this process is actually using.
 
 ## Contributing
 
 Work happens on a branch per task and lands through a pull request — see
 [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, the commit-message
 convention, and the exact commands CI runs. `main` is kept green by
-`.github/workflows/ci.yml`, which lints and tests the server and builds the
-client on every push and pull request.
+`.github/workflows/ci.yml`, which on every push and pull request lints and tests
+both packages against a coverage floor, checks formatting with Prettier, builds
+the client, and re-runs the STUN test vectors. Nothing in it needs a database,
+Docker, or a paid account.
 
 ## Scaling up from here (in priority order)
 

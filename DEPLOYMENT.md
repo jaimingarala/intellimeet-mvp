@@ -136,6 +136,43 @@ What no single machine can show is whether two different networks reach each
 other. That is the two-network smoke test in the README, and it is the run worth
 capturing for the demo video.
 
+## 6. Reading the logs
+
+Every request gets an id — its own, or the `X-Request-Id` the proxy in front
+sent — and that id comes back on the response. It is also in every error body:
+
+```json
+{ "error": "Internal server error.", "requestId": "0f6d1a3e-…" }
+```
+
+So "the demo said 500 at 14:02" is searchable: grep the platform's logs for the
+id and you get the one line that belongs to it, with the request that caused it.
+
+One line is written per completed request (`json` in production, `pretty` in
+development), and one line per failure. The failure lines carry the stack — the
+response never does, which is the point: a caller learns that something broke,
+not how. Field names that look like credentials (`password`, `token`,
+`authorization`, `apiKey`, …) are replaced with `[redacted]` on the way into the
+log, so a request body logged by mistake cannot leak one.
+
+Failures are classified before they are reported, which is where a plain Express
+app usually gets it wrong:
+
+| What happened | Status | Why it matters |
+|---|---|---|
+| Body over the 1 MB limit | `413`, not `500` | A `500` sends you looking for a bug that isn't there |
+| Malformed JSON | `400` | The client sent it; the log says so without a stack |
+| Anything else | `500`, generic message | The stack stays in the log |
+
+An origin that isn't in `CLIENT_ORIGIN` is not an error at all: `cors` simply
+omits `Access-Control-Allow-Origin`, and the browser is what refuses to hand the
+response to the page. `npm run verify:demo` checks that preflight from the
+outside, because that failure is completely invisible in a server log.
+
+`GET /api/admin/stats` reports this process's `logLevel`, `logFormat` and
+`trustProxy` alongside the deployment warnings, so you can confirm what a running
+deployment is doing without reading its environment.
+
 ## Environment reference
 
 Server (Render) — `render.yaml` carries the demo-ready values, and the tables
@@ -163,6 +200,8 @@ both report the misconfigurations that matter.
 | `MAIL_WEBHOOK_URL` | no | JSON `POST { to, subject, text, link }`. Required for real verification mail. |
 | `MAIL_WEBHOOK_TOKEN` | no | Bearer token for that webhook. |
 | `ADMIN_TOKEN` | no | Enables `GET /api/admin/stats` and `POST /api/admin/sweep` (both `404` without it). Also the way to read this deployment's own config warnings. |
+| `LOG_FORMAT` | no | `json` or `pretty`. Defaults to `json` in production, which is what a platform's log viewer wants. |
+| `LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error`, or `silent`. |
 
 Client (Vercel):
 
