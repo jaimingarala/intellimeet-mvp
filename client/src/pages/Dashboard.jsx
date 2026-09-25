@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext.jsx';
+import { exportFilename, matchesQuery, meetingToMarkdown } from '../lib/export.js';
 
 export default function Dashboard() {
   const { user, logout, resendVerification } = useAuth();
@@ -28,6 +29,9 @@ export default function Dashboard() {
   const [meetings, setMeetings] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+
+  const visible = meetings.filter((meeting) => matchesQuery(meeting, query));
 
   useEffect(() => {
     loadMeetings();
@@ -54,6 +58,25 @@ export default function Dashboard() {
     } catch (err) {
       setError(err.response?.data?.error || 'Could not create meeting.');
     }
+  }
+
+  /**
+   * Save one meeting as Markdown.
+   *
+   * A Blob and a click on a synthetic anchor — the whole of the download, kept
+   * here rather than in `lib/export.js` so that what the tests cover is the
+   * document itself instead of the DOM plumbing around it.
+   */
+  function handleExport(meeting) {
+    const markdown = meetingToMarkdown(meeting);
+    const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = exportFilename(meeting);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function handleJoin(e) {
@@ -153,14 +176,34 @@ export default function Dashboard() {
         </div>
 
         <div className="panel">
-          <h2>History</h2>
+          <div className="panel-head">
+            <h2>History</h2>
+            {meetings.length > 0 && (
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Search title, room code or status…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            )}
+          </div>
           {loading ? (
             <div className="empty-state">Loading…</div>
           ) : meetings.length === 0 ? (
             <div className="empty-state">No meetings yet — start one above.</div>
+          ) : visible.length === 0 ? (
+            <div className="empty-state">
+              No meetings match “{query}” — {meetings.length} in your history.
+            </div>
           ) : (
             <ul className="meeting-list">
-              {meetings.map((m) => (
+              {query && (
+                <li className="field-hint">
+                  {visible.length} of {meetings.length} shown.
+                </li>
+              )}
+              {visible.map((m) => (
                 <li key={m._id} className="meeting-row">
                   <div>
                     <div className="meeting-title">{m.title}</div>
@@ -174,6 +217,13 @@ export default function Dashboard() {
                     >
                       {m.status}
                     </span>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => handleExport(m)}
+                      title="Save the summary, action items and chat as Markdown"
+                    >
+                      Export .md
+                    </button>
                     <button
                       className="btn btn-secondary"
                       onClick={() => navigate(`/room/${m.roomCode}`)}
