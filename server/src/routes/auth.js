@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
+const { log } = require('../lib/logger');
 const { requireAuth } = require('../middleware/auth');
 const { isDemoEnabled, startDemo } = require('../services/guest');
 const {
@@ -25,12 +26,13 @@ const authLimiter = rateLimit({
   message: { error: 'Too many auth attempts. Try again later.' },
 });
 
+// The claims are the identity and nothing else. There is deliberately no `role`
+// here: the schema had one, nothing enforced it, and a claim that no route reads
+// is worse than no claim — it reads as an authorization model that isn't there.
 function signToken(user) {
-  return jwt.sign(
-    { sub: user._id, name: user.name, email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-  );
+  return jwt.sign({ sub: user._id, name: user.name, email: user.email }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  });
 }
 
 router.post('/signup', authLimiter, async (req, res) => {
@@ -54,7 +56,7 @@ router.post('/signup', authLimiter, async (req, res) => {
     const token = signToken(user);
     return res.status(201).json({ token, user: user.toSafeJSON() });
   } catch (err) {
-    console.error('[auth/signup]', err);
+    log.error('signup failed', { scope: 'auth/signup', err });
     return res.status(500).json({ error: 'Could not create account.' });
   }
 });
@@ -87,7 +89,7 @@ router.post('/demo', authLimiter, async (req, res) => {
     const token = signToken(user);
     return res.json({ token, user: user.toSafeJSON(), roomCode: meeting.roomCode });
   } catch (err) {
-    console.error('[auth/demo]', err);
+    log.error('demo provisioning failed', { scope: 'auth/demo', err });
     return res.status(500).json({ error: 'Could not start the demo.' });
   }
 });
@@ -151,7 +153,7 @@ router.post('/claim', authLimiter, requireAuth, async (req, res) => {
     if (err?.code === 11000) {
       return res.status(409).json({ error: 'An account with that email already exists.' });
     }
-    console.error('[auth/claim]', err);
+    log.error('claim failed', { scope: 'auth/claim', err });
     return res.status(500).json({ error: 'Could not save your account.' });
   }
 });
@@ -187,7 +189,7 @@ router.post('/login', authLimiter, async (req, res) => {
     const token = signToken(user);
     return res.json({ token, user: user.toSafeJSON() });
   } catch (err) {
-    console.error('[auth/login]', err);
+    log.error('login failed', { scope: 'auth/login', err });
     return res.status(500).json({ error: 'Could not log in.' });
   }
 });
@@ -219,7 +221,7 @@ router.post('/verify-email', authLimiter, async (req, res) => {
 
     return res.json({ user: result.user.toSafeJSON() });
   } catch (err) {
-    console.error('[auth/verify-email]', err);
+    log.error('email verification failed', { scope: 'auth/verify-email', err });
     return res.status(500).json({ error: 'Could not confirm that address.' });
   }
 });
@@ -239,7 +241,7 @@ router.post('/resend-verification', authLimiter, async (req, res) => {
       message: 'If that address is waiting for confirmation, a new link is on its way.',
     });
   } catch (err) {
-    console.error('[auth/resend-verification]', err);
+    log.error('resend verification failed', { scope: 'auth/resend-verification', err });
     return res.status(500).json({ error: 'Could not send a confirmation email.' });
   }
 });

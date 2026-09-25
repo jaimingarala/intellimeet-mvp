@@ -65,7 +65,7 @@ describe('guest room capacity', () => {
       assert.equal(
         store.meetings.some((m) => m.roomCode === first.meeting.roomCode),
         false,
-        'the oldest room made way'
+        'the oldest room made way',
       );
       assert.ok(store.meetings.some((m) => m.roomCode === second.meeting.roomCode));
       assert.ok(store.meetings.some((m) => m.roomCode === third.meeting.roomCode));
@@ -73,7 +73,7 @@ describe('guest room capacity', () => {
       // The evicted guest goes with its room, exactly as the sweep would leave it.
       assert.equal(
         store.users.some((u) => String(u._id) === String(first.user._id)),
-        false
+        false,
       );
     });
   });
@@ -86,7 +86,7 @@ describe('guest room capacity', () => {
 
       const socket = await connect(
         baseUrl(),
-        tokenFor({ id: String(live.user._id), name: live.user.name })
+        tokenFor({ id: String(live.user._id), name: live.user.name }),
       );
       try {
         await joinRoom(socket, live.meeting.roomCode);
@@ -95,10 +95,14 @@ describe('guest room capacity', () => {
 
         assert.ok(
           store.meetings.some((m) => m.roomCode === live.meeting.roomCode),
-          'the occupied room survives'
+          'the occupied room survives',
         );
         assert.ok(store.meetings.some((m) => m.roomCode === second.meeting.roomCode));
-        assert.equal(guestRoomCodes().length, 2, 'the cap is exceeded rather than cutting a demo off');
+        assert.equal(
+          guestRoomCodes().length,
+          2,
+          'the cap is exceeded rather than cutting a demo off',
+        );
       } finally {
         socket.disconnect();
       }
@@ -115,7 +119,6 @@ describe('guest room capacity', () => {
         name: 'Real User',
         email: 'real@test.dev',
         passwordHash: 'x',
-        role: 'member',
         isGuest: false,
         createdAt: new Date(),
       });
@@ -140,11 +143,14 @@ describe('guest room capacity', () => {
       const first = await startDemo();
       const second = await startDemo();
 
-      assert.ok(store.meetings.some((m) => m._id === 'real-room'), "a real user's room is not a candidate");
+      assert.ok(
+        store.meetings.some((m) => m._id === 'real-room'),
+        "a real user's room is not a candidate",
+      );
       assert.equal(
         store.meetings.some((m) => m.roomCode === first.meeting.roomCode),
         false,
-        'the older guest room made way instead'
+        'the older guest room made way instead',
       );
       assert.ok(store.meetings.some((m) => m.roomCode === second.meeting.roomCode));
       assert.equal(guestRoomCodes().length, 1);

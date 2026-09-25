@@ -6,7 +6,6 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['admin', 'member'], default: 'member' },
     // Anonymous "Try the demo" accounts. The password hash is of a random value
     // that is never stored, so a guest can't be logged into; the flag exists so
     // guests can be told apart from real accounts (and aged out) later.
@@ -29,12 +28,12 @@ const userSchema = new mongoose.Schema(
           sentAt: { type: Date, default: Date.now },
           sentTo: { type: String, required: true },
         },
-        { _id: false }
+        { _id: false },
       ),
       default: undefined,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Guest retention looks guests up as { isGuest: true, createdAt: < window }, and
@@ -64,7 +63,6 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     id: this._id,
     name: this.name,
     email: this.email,
-    role: this.role,
     isGuest: this.isGuest,
     emailVerified: this.emailVerified !== false,
     createdAt: this.createdAt,

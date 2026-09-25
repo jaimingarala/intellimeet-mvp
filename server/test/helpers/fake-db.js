@@ -17,20 +17,12 @@ const meetings = [];
 // and for the `.toString()` calls the routes make.
 const newId = () => crypto.randomBytes(12).toString('hex');
 
-function makeUser({
-  name,
-  email,
-  passwordHash,
-  role = 'member',
-  isGuest = false,
-  emailVerified = true,
-}) {
+function makeUser({ name, email, passwordHash, isGuest = false, emailVerified = true }) {
   return {
     _id: newId(),
     name,
     email: String(email).toLowerCase(),
     passwordHash,
-    role,
     isGuest,
     // Mirrors the real schema's default: signups and guests carry no pending
     // proof, and a claim is what sets this false. Present at all because the
@@ -52,7 +44,6 @@ function makeUser({
         id: this._id,
         name: this.name,
         email: this.email,
-        role: this.role,
         isGuest: this.isGuest,
         emailVerified: this.emailVerified !== false,
         createdAt: this.createdAt,
@@ -99,7 +90,8 @@ const readPath = (doc, path) =>
 function matchesUser(user, query = {}) {
   if (query._id?.$in && !idList(query._id.$in).includes(String(user._id))) return false;
   if (query.isGuest !== undefined && Boolean(user.isGuest) !== Boolean(query.isGuest)) return false;
-  if (query.createdAt?.$lt && !(new Date(user.createdAt) < new Date(query.createdAt.$lt))) return false;
+  if (query.createdAt?.$lt && !(new Date(user.createdAt) < new Date(query.createdAt.$lt)))
+    return false;
   return true;
 }
 
@@ -203,7 +195,7 @@ const Meeting = {
     const allowed = (filter.$or || []).some((clause) =>
       clause.host
         ? String(meeting.host) === String(clause.host)
-        : isMember(meeting, clause.participants)
+        : isMember(meeting, clause.participants),
     );
     if (!allowed) return { matchedCount: 0, modifiedCount: 0 };
     if (update.$push?.chatMessages) meeting.chatMessages.push(update.$push.chatMessages);

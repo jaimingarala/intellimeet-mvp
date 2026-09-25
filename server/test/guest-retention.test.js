@@ -21,7 +21,6 @@ function guestDoc(id, createdAt) {
     name: `Guest ${id}`,
     email: `${id}@guest.intellimeet.dev`,
     passwordHash: '$2a$10$stubbed',
-    role: 'member',
     isGuest: true,
     createdAt,
   };
@@ -60,28 +59,31 @@ describe('guest retention', () => {
     store.users.length = 0;
     store.meetings.length = 0;
 
-    store.users.push(
-      guestDoc('old-guest', daysAgo(2)),
-      guestDoc('fresh-guest', new Date()),
-      {
-        _id: 'real-user',
-        name: 'Real User',
-        email: 'real@test.dev',
-        passwordHash: '$2a$10$stubbed',
-        role: 'member',
-        isGuest: false,
-        createdAt: daysAgo(30),
-      }
-    );
+    store.users.push(guestDoc('old-guest', daysAgo(2)), guestDoc('fresh-guest', new Date()), {
+      _id: 'real-user',
+      name: 'Real User',
+      email: 'real@test.dev',
+      passwordHash: '$2a$10$stubbed',
+      isGuest: false,
+      createdAt: daysAgo(30),
+    });
     store.meetings.push(
-      roomDoc('old-room', { roomCode: 'aaa-bbbb-ccc', host: 'old-guest', participants: ['old-guest'] }),
-      roomDoc('fresh-room', { roomCode: 'ddd-eeee-fff', host: 'fresh-guest', participants: ['fresh-guest'] }),
+      roomDoc('old-room', {
+        roomCode: 'aaa-bbbb-ccc',
+        host: 'old-guest',
+        participants: ['old-guest'],
+      }),
+      roomDoc('fresh-room', {
+        roomCode: 'ddd-eeee-fff',
+        host: 'fresh-guest',
+        participants: ['fresh-guest'],
+      }),
       roomDoc('real-room', {
         roomCode: 'ggg-hhhh-iii',
         host: 'real-user',
         participants: ['real-user', 'old-guest'],
         banned: ['old-guest'],
-      })
+      }),
     );
 
     const result = await purgeStaleGuests();
@@ -90,11 +92,11 @@ describe('guest retention', () => {
     assert.deepEqual(result, { guests: 1, rooms: 1, seats: 1, skipped: 0 });
     assert.deepEqual(
       store.users.map((u) => u._id),
-      ['fresh-guest', 'real-user']
+      ['fresh-guest', 'real-user'],
     );
     assert.deepEqual(
       store.meetings.map((m) => m._id),
-      ['fresh-room', 'real-room']
+      ['fresh-room', 'real-room'],
     );
 
     // And the guest is gone from the room it had merely joined, ban included.
@@ -115,7 +117,7 @@ describe('guest retention', () => {
     assert.equal(result.guests, 1);
     assert.equal(
       store.users.some((u) => u._id === 'recent-guest'),
-      false
+      false,
     );
   });
 
@@ -142,10 +144,13 @@ describe('guest retention', () => {
 
       assert.equal(result.guests, 0, 'nothing is deleted while the room is occupied');
       assert.equal(result.skipped, 1);
-      assert.ok(store.users.some((u) => String(u._id) === String(user.id)), 'the guest survives');
+      assert.ok(
+        store.users.some((u) => String(u._id) === String(user.id)),
+        'the guest survives',
+      );
       assert.ok(
         store.meetings.some((m) => m.roomCode === roomCode),
-        'and so does the room it is sitting in'
+        'and so does the room it is sitting in',
       );
     } finally {
       socket.disconnect();
@@ -179,9 +184,12 @@ describe('guest retention', () => {
       assert.equal(result.skipped, 2, 'both the visitor and the absent host are spared');
       assert.ok(
         store.meetings.some((m) => m.roomCode === host.body.roomCode),
-        'the room survives with its host'
+        'the room survives with its host',
       );
-      assert.equal(String(store.meetings.find((m) => m.roomCode === host.body.roomCode).host), String(host.body.user.id));
+      assert.equal(
+        String(store.meetings.find((m) => m.roomCode === host.body.roomCode).host),
+        String(host.body.user.id),
+      );
     } finally {
       socket.disconnect();
     }
@@ -208,7 +216,7 @@ describe('guest retention', () => {
     assert.equal(
       store.meetings.some((m) => m.roomCode === guest.body.roomCode),
       false,
-      'the room goes once nobody is in it'
+      'the room goes once nobody is in it',
     );
   });
 });

@@ -27,7 +27,7 @@ describe('authentication', () => {
     assert.equal(typeof token, 'string');
     assert.equal(user.name, 'Alice');
     assert.equal(user.email, 'alice@test.dev');
-    assert.equal(user.role, 'member');
+    assert.equal(user.isGuest, false);
   });
 
   test('signup never returns the password or its hash', async () => {
@@ -68,7 +68,10 @@ describe('authentication', () => {
   });
 
   test('signup requires a name, email and password', async () => {
-    const res = await api('/api/auth/signup', { method: 'POST', body: { email: 'noname@test.dev' } });
+    const res = await api('/api/auth/signup', {
+      method: 'POST',
+      body: { email: 'noname@test.dev' },
+    });
 
     assert.equal(res.status, 400);
   });
