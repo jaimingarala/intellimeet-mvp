@@ -120,16 +120,21 @@ half of the gate is still the deploy itself.
 
 ## Phase 4 — Documentation & presentation  ·  20% + 10%
 
-| ID | Task |
-|---|---|
-| P4.1 | Architecture diagram (Excalidraw/Draw.io → PNG): client, API, Socket.io, MongoDB, TURN, AI providers, deploy topology |
-| P4.2 | README polish: live demo link **and demo credentials at the top**, architecture, test/lint commands, deployment notes, screenshots, roadmap, known limits |
-| P4.3 | The project report PDF (Deliverable 1, 8-15 pages, following the spec's 10-section outline) — reuse the gap analysis as the "what is deferred and why" section |
-| P4.4 | 5-10 screenshots/GIFs of a real multi-user session + Lighthouse scores on the live URL |
-| P4.5 | 3-7 min demo video: two-person meeting → screen share → chat → AI summary/action items → board → analytics → then the deployed URL, tests, and CI run |
-| P4.6 | Final hygiene: CI badge, license, verify both `.env.example` files match the code |
+| ID | Task | Notes |
+|---|---|---|
+| P4.1 | ✅ Architecture diagram: client, API, Socket.io, MongoDB, TURN, AI providers, deploy topology | `docs/architecture.md` carries a Mermaid version that renders on the repository page **and** a clean ASCII version, which the brief's own guidelines allow where no drawing tool was used — and which is what the PDF report embeds, since its renderer draws no images. A diagram that lives in the diff is one that stays true. |
+| P4.2 | ✅ README polish: demo link and the credentials story at the top, architecture, test/lint commands, deployment notes, screenshots, roadmap, known limits | The credentials story is stronger than credentials: there are none. One click mints a guest, and the README says so above the fold. The live URL is a marked, explained gap rather than a dead link. |
+| P4.3 | ✅ The project report (`docs/report.md` → `docs/report.pdf`), 14 A4 pages, following the brief's ten-section outline, with the deferred work and its reasons in place of a checklist | Written once in Markdown and rendered by `scripts/report-pdf.mjs` — no dependency, no install, and a test that fails if the committed PDF does not match the Markdown. Pandoc is on this machine but has no PDF engine; a LaTeX or headless-browser toolchain would have been a large, fragile addition to a repository whose rule is that a judge can clone it and run it. |
+| P4.4 | Screenshots (5-10) of a real multi-user session + Lighthouse on the live URL | Shot list written and reproducible (`docs/demo-runbook.md`): each frame names the exact state to capture and why that frame carries the point. The frames themselves need the deployed URL. |
+| P4.5 | 3-7 min demo video | Scripted with timings in the same runbook, including the honest close (what is not built) and the recording notes that make a take usable. Recording is a human step against a deployed demo. |
+| P4.6 | ✅ Final hygiene: CI badge, license, both `.env.example` files checked against the code | The check found real drift: `TRUST_PROXY`, `AUTH_RATE_LIMIT_MAX` and `AUTH_RATE_LIMIT_WINDOW_MS` were read by the server and undocumented, which is exactly the kind of gap a reader discovers by setting nothing and wondering why thirty demo clicks stop working. `scripts/test/env-example.test.mjs` now compares both files against what the code reads, in both directions, and the example file carries the missing three. |
 
-**Gate D:** submission package complete — URL, repo, README, report PDF, video.
+**Gate D:** the submission package is internally complete and consistent — repository,
+README, architecture document, report PDF, runbook — except for the two items that
+are not code: the deployed URL (and therefore the screenshots and Lighthouse run
+that need a URL) and the demo video. Both are specified down to the frame and the
+second; neither can be produced from a laptop without the accounts in
+`DEPLOYMENT.md`.
 
 ## Phase 5 — Stretch (only if 0-4 land)
 
@@ -162,7 +167,14 @@ here's why" reads better than a checkbox that falls over in the demo.
 - GitHub repo (public) to push to; Render + Vercel + Atlas accounts.
 - A `DEMO_API_URL` repository variable, or the keep-alive workflow does nothing.
 - TURN credentials for the deployed demo (the local coturn in `turn/` proves the relay path without one).
+- **The two Phase 4 deliverables that need a person**: the screenshot set and the
+demo video. The shot list and the timed script are in `docs/demo-runbook.md`; both
+need the deployed URL first, and the video is better recorded in two takes.
 - Decision still open: commit the brief `Zidio Web.pdf` or keep it out (P0.3).
+- **Check the report's cover before submitting**: it carries the git identity
+(`jaimingarala`) and the repository link, and those should be your real name and
+handle. Editing `docs/report.md` and re-running `npm run report:pdf` is the whole
+change.
 
 ## Decisions taken
 
@@ -173,6 +185,16 @@ connect, and there is no error to read when it happens.
 - **Prettier (P2.4):** one config at the repository root rather than one per
 package, because two configs that can disagree are worse than none.
 - **The `role` field (P2.6):** deleted. Nobody read it; keeping it would have
-meant inventing an admin path to justify it, which is Phase 3 work at best.
-- **Sentry (P2.7):** not adopted. Optional in the plan, and it would put a key
-and an account between a judge and a working clone.
+meant inventing an admin path to justify it, which is Phase 3 work at best.- **Sentry (P2.7):** not adopted. Optional in the plan, and it would put a key
+  and an account between a judge and a working clone.
+- **The architecture diagram (P4.1):** Mermaid **plus** clean ASCII art, rather
+  than an exported PNG. The brief's own guidelines allow ASCII art where no
+  drawing tool was used, GitHub renders the Mermaid source natively, and both
+  live in the diff — an exported image is a binary nobody can regenerate and
+  nobody notices going stale.
+- **The report PDF (P4.3):** produced by an in-repo renderer instead of a
+  toolchain. Pandoc is installed on this machine and still cannot make a PDF
+  without a LaTeX engine or a headless browser; adding either to produce one
+  document would hand a judge a dependency they do not otherwise need. The
+  renderer is dependency-free, and a test fails if the committed PDF stops
+  matching the Markdown it came from.

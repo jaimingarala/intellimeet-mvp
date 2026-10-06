@@ -32,9 +32,10 @@ checklist. CI (`.github/workflows/ci.yml`) runs lint, tests and a coverage floor
 for both packages, a Prettier check over the whole repo, and the client build; it
 must be green before merging.
 
-> A GitHub remote isn't configured yet, so the push/PR steps only work once it
-> is (see `NEXT-MILESTONE.md`, P0.5). Until then it's fine to commit straight to
-> `main` — but once the remote exists, everything goes through a PR.
+The remote is `github.com/jaimingarala/intellimeet-mvp` and CI runs on every
+push, so the PR is the review surface even when you are the only reviewer: read
+it there before merging. (The earliest commits were made straight to `main`,
+before the remote existed; everything since has gone through a branch.)
 
 **Merge with "Squash and merge"** for a single-commit-per-task history, taking
 the PR title as the commit subject — which is why the subject convention below
@@ -156,9 +157,9 @@ Two things that trip people up:
 ## Tests
 
 - **Server**: Node's built-in `node:test` runner, files under `server/test/`.
-  Fifteen suites today — `admin`, `auth`, `capacity`, `claim`, `deployment`,
-  `email-verification`, `guest`, `guest-retention`, `hardening`, `indexes`,
-  `meeting-access`, `moderation`, `observability`, `socket` and
+  Sixteen suites today — `action-items`, `admin`, `auth`, `capacity`, `claim`,
+  `deployment`, `email-verification`, `guest`, `guest-retention`, `hardening`,
+  `indexes`, `meeting-access`, `moderation`, `observability`, `socket` and
   `socket-payloads` — plus three shared helpers. A new route belongs in the suite
   that matches its concern; a new socket event belongs in `socket.test.js`
   (protocol) or `socket-payloads.test.js` (what a client is allowed to send).
@@ -179,13 +180,20 @@ Two things that trip people up:
   supplies the two WebRTC globals Node doesn't have.
 - **Scripts**: `node:test` again, under `scripts/test/`. Today that is the STUN
   codec behind `npm run check:turn`, pinned to the published test vectors in
-  RFC 5769, and `ci-summary.mjs`, which parses each job's output for the run
-  page — its fixtures are captured runner output, including the ANSI-styled
-  lines Vitest writes when its output is piped, which is the case that only
-  showed up against a real log. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is
+  RFC 5769; `ci-summary.mjs`, which parses each job's output for the run page,
+  with fixtures captured from real runner output including the ANSI-styled lines
+  Vitest writes when its output is piped; `ci-workflow.test.mjs`, which pins the
+  two CI invariants that fail silently; `env-example.test.mjs`, which compares
+  both example files against what the code actually reads; and
+  `report-pdf.test.mjs`, which checks the generated report's layout instead of
+  trusting it. Wire-format code is worth this much: a MESSAGE-INTEGRITY that is
   subtly wrong still looks fine locally and fails against every real server, so
   the check would report a network problem that doesn't exist. Those tests are
   dependency-free, which is why CI runs them without an install step.
+- **The report** is generated, not hand-made: `npm run report:pdf` renders
+  `docs/report.md` into `docs/report.pdf` with a small dependency-free renderer.
+  A test fails if the committed PDF is not what the Markdown produces, so the two
+  cannot drift apart. Edit the Markdown, re-run the command, commit both.
 
 ## Documentation expectations
 

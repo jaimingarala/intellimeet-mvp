@@ -1,8 +1,59 @@
 # IntellMeet — MVP
 
+[![CI](https://github.com/jaimingarala/intellimeet-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/jaimingarala/intellimeet-mvp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node 22](https://img.shields.io/badge/node-22-3c873a.svg)](.nvmrc)
+
 A trimmed, actually-runnable slice of the IntellMeet spec: real-time video
 meetings, in-meeting chat, and AI-generated summaries + action items — built
 on the MERN stack, with no paid services required to run it end to end.
+
+**Live demo:** not deployed yet — a hosted URL is the last open item in
+[`NEXT-MILESTONE.md`](NEXT-MILESTONE.md), and it needs three free accounts
+(Render, MongoDB Atlas, Vercel) which [`DEPLOYMENT.md`](DEPLOYMENT.md) walks
+through. Everything below runs locally today.
+
+**There are no credentials to type, anywhere.** No sign-up, no shared demo
+password, no seeded database to prepare: one click of **Try the demo** mints an
+anonymous guest with a room of their own, and opening a room link is how a second
+person joins. `npm run dev` starts the whole stack — including a local MongoDB —
+with no account and no configuration.
+
+## Documentation
+
+| Document | What it is |
+|---|---|
+| [`docs/report.md`](docs/report.md) · [PDF](docs/report.pdf) | The project report, 10 sections following the brief's outline. The PDF is generated from the Markdown by `npm run report:pdf`. |
+| [`docs/architecture.md`](docs/architecture.md) | Topology, the flow of a session, the socket and REST surface, the data model, and where the trust boundaries are. |
+| [`docs/demo-runbook.md`](docs/demo-runbook.md) | The screenshot shot list and a timed script for the demo video, so both are reproducible rather than improvised. |
+| [`NEXT-MILESTONE.md`](NEXT-MILESTONE.md) | What is planned, in priority order, with what is deliberately deferred and why. |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Deploying the demo: which accounts, which variables, and how to check it. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branch, commit and review conventions, plus the exact commands CI runs. |
+
+## Architecture at a glance
+
+Three processes and one external service, and the one thing worth knowing about
+the shape is that **media never touches the server** — calls are a WebRTC mesh,
+so audio and video go straight from browser to browser and the API only carries
+signalling, chat and data. That is what lets a single free instance carry a real
+call; it is also the limit, since a mesh grows with the square of the room size.
+
+- **Client** — React + Vite, served as a static bundle. `src/lib` holds the WebRTC
+  helpers (ICE queue, screen-share track swapping, the caps mirrored from the
+  server), which are the parts with unit tests.
+- **API** — Express + Socket.io in one process: REST for auth, meetings,
+  summaries and moderation; sockets for `join-room`, `signal`, `chat-message`,
+  `media-state` and the action-item broadcast.
+- **Signalling, not media** — SDP and ICE candidates are relayed opaquely (and
+  length-capped); the media path is direct, or through TURN when a direct path
+  is impossible.
+- **Data** — MongoDB: `users` and `meetings`, with indexes for room lookup, the
+  guest sweep and email verification.
+- **AI** — OpenAI when `OPENAI_API_KEY` is set, a free offline summarizer
+  otherwise, so the feature works with no account at all.
+
+[`docs/architecture.md`](docs/architecture.md) has the diagram (Mermaid and
+ASCII), the session flow step by step, and the reasoning behind each boundary.
 
 ## What's in the MVP (and what's deliberately deferred)
 
@@ -38,6 +89,10 @@ add exactly the pieces above as they become the actual bottleneck.
 intellimeet-mvp/
   server/   Node/Express API + Socket.io signaling + MongoDB models
   client/   React + Vite frontend
+  scripts/  Zero-dependency tooling: one-command dev, TURN check, demo
+            verification, the CI summary parser, the report renderer
+  docs/     Report (Markdown + generated PDF), architecture, demo runbook
+  turn/     A local coturn relay in Docker, for proving the TURN path
 ```
 
 ## Running it locally
@@ -518,6 +573,36 @@ fields whose *names* look like credentials (`password`, `token`, `authorization`
 `apiKey`, …) are redacted on the way in. `GET /api/admin/stats` reports the
 level, format and `trustProxy` setting this process is actually using.
 
+## Tests and checks
+
+Everything CI runs, from the repository root:
+
+```bash
+npm run lint           # ESLint, both packages
+npm run test           # server suites (node:test) + client (vitest)
+npm run test:coverage  # the same, with the coverage floor enforced
+npm run format:check   # Prettier, over the whole repository
+npm run build          # the production client bundle
+npm run test:scripts   # the tooling's own tests (STUN codec, summary parser,
+                       # report renderer, environment parity)
+npm run report:pdf     # regenerate docs/report.pdf from docs/report.md
+```
+
+None of it needs a database, Docker, a `.env` or an account: the server suites
+boot the **real** entry point with the Mongoose models swapped for in-memory
+stubs, so the middleware order, the 404 and the error handler are covered too.
+
+Today: **179** server tests across sixteen suites, **40** client tests across four
+files, and **70** tooling tests — and the numbers are enforced rather than
+reported. The server floor is 85% lines and functions / 70% branches, measured at
+91.8% / 94.0% / 86.2%; the client's floor is 95% lines, statements and functions /
+90% branches, measured at 100% / 95.3% over `client/src/lib`. Two of the checks are quieter than that and worth naming,
+because both fail *silently* in normal use: every test job publishes its counts
+and coverage to the run summary page (GitHub serves job logs only to an
+authenticated request), and the tooling's own tests pin `set -o pipefail` on every
+step that pipes test output through `tee` — without it, a failing suite reports
+the exit status of `tee` and the job goes green.
+
 ## Contributing
 
 Work happens on a branch per task and lands through a pull request — see
@@ -532,22 +617,79 @@ Each test job also publishes its counts and coverage percentages — beside the
 floor enforcing them — into the run's summary page, so the numbers can be read
 without an authenticated log download, including on a failing run.
 
-## Scaling up from here (in priority order)
+## Screenshots
 
-1. **SFU for video** — swap the WebRTC mesh for a media server (LiveKit,
-   mediasoup, or Daily/Twilio if you want managed) once rooms need more than
-   ~6 concurrent video participants.
-2. **Live transcription** — pipe meeting audio to OpenAI's Whisper API (or a
-   self-hosted `faster-whisper` if you have GPU access) instead of relying on
-   pasted notes.
-3. **Team workspaces & Kanban** — add a `Project`/`Task` model and board UI;
-   the action-item extraction already produces the right shape of data to
-   seed tasks from.
-4. **Deployment** — a single Docker Compose file (API + client + MongoDB) is
-   enough until you have real usage; hold off on Kubernetes/Helm until
-   there's a concrete scaling reason for it.
-5. **Observability** — add Sentry for error tracking before load testing or
-   scaling infra; it's cheap to add and pays for itself immediately.
+Deliberately empty until the demo is deployed. The point of a screenshot is to
+show the product as a visitor meets it, so the set is a shot list rather than a
+set of frames from a local run pretending to be one — the list, with the exact
+state to capture for each frame, is in
+[`docs/demo-runbook.md`](docs/demo-runbook.md). The parts a still frame cannot
+carry (a tick propagating to the other participant, a mute labelling a peer's
+tile, a screen share replacing the camera) are scripted there as the demo video's
+beats instead.
+
+What does exist today: the architecture diagram in
+[`docs/architecture.md`](docs/architecture.md), the generated
+[report PDF](docs/report.pdf), and the CI run page, which publishes its own test
+counts and coverage without needing a token to read them.
+
+## Known limits
+
+Stated here rather than discovered later, because most of these are choices:
+
+- **Rooms are for 2–6 video participants.** The media plane is a mesh, so
+  connections grow with the square of the room size. The spec's 500–5,000 target
+  needs an SFU, which is a different deployment, not a setting.
+- **One process, no horizontal scaling.** Rate-limit stores are in-memory, and
+  moderation reaches sockets through an in-process reference, so it would not
+  evict across instances. Redis and a shared socket adapter come first.
+- **No load test has been run.** Concurrency is a design statement here, not a
+  measured number, and this README says so instead of quoting one.
+- **Chat history is uncapped per meeting.** `$push` grows the array without
+  bound; a retention window (`$push` with `$slice`) belongs before rooms run for
+  hours.
+- **Any member can overwrite a meeting's transcript and summary.** Only the host
+  is protected from removal. Restricting generation to the host is a product
+  decision that has not been made.
+- **Recording, live transcription, workspaces/Kanban and analytics are not
+  built.** Each is in the roadmap below with what it would take.
+- **`npm audit` is clean on the server and not on the client.** The outstanding
+  advisories are `react-router-dom` 6.x (fixed in 7.x, a major version that
+  re-touches every screen) plus dev-only `esbuild`/`vite` and Vitest entries. The
+  app navigates only to server-generated room codes and does not server-render.
+- **No hosted error tracker.** Sentry was considered and rejected: it puts an
+  account and an API key between a judge and a working clone, which this project's
+  own rule forbids. Errors stay in the structured log with a request id.
+- **The deployed demo and its Lighthouse numbers do not exist yet** — both need
+  the hosting accounts.
+
+## Roadmap
+
+In priority order, with the reasoning rather than just the labels:
+
+1. **Deploy the demo.** The one open item from the milestone plan: a Render
+   service, an Atlas M0 cluster and a Vercel project, then
+   `npm run verify:demo -- --api … --client …` to check it from the outside.
+2. **Meeting recording** — a canvas-composited `MediaRecorder` producing a
+   downloadable WebM. Needs no server and no account, which is why it is first.
+3. **Live transcription** — the browser's own Web Speech API is free and
+   keyless, which fits the project's rule that a judge can run everything. Label
+   it experimental and report what was measured rather than claiming accuracy.
+4. **Team workspaces & Kanban** — add a `Project`/`Task` model and a board UI;
+   the action-item extraction already produces the right shape of data to seed
+   tasks from. This is the largest remaining gap against the brief.
+5. **Analytics** — meetings held and attended, duration, items completed, drawn
+   as plain SVG so no charting dependency is added. The interesting part is
+   choosing a metric that is not vanity.
+6. **Shared notes and typing indicators**, then **`@mention` notifications** in
+   chat — the two remaining in-meeting collaboration gaps.
+7. **SFU for video** — swap the mesh for a media server (LiveKit, mediasoup, or
+   a managed service) once rooms need more than ~6 concurrent participants.
+8. **Redis adapter + sticky sessions, then a shared rate-limit store** — required
+   before any multi-instance deploy, in that order.
+9. **A load test** — so the concurrency claim becomes a number.
+10. **TypeScript** — the brief's stack line, and the lowest-value item here; if
+    pursued, start with `checkJs` and JSDoc on the server rather than a rewrite.
 
 ## Notes on the underlying spec doc
 
