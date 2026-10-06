@@ -234,7 +234,7 @@ partly built. So the plumbing shipped first, then hardening, then features.
 |---|---|---|---|
 | 0 | Repository foundation | Initialised repository with a root ignore file, per-package lockfiles committed for reproducible CI, Node version pinned, conventional commits with a message template, contributing guide and pull-request template | Complete |
 | 1 | Public demo (30%) | Guest provisioning on demand, the one-click demo button, link-based guest joining, Render and Vercel deploy configuration, a scheduled keep-alive ping, deployment checks at boot, `verify:demo`, TURN tooling plus a local coturn harness | Code complete; the hosted half needs the platform accounts |
-| 2 | Technical depth (25%) | Test harness and fifteen server suites, client tests with Vitest, ESLint plus one root Prettier config, four-job CI with enforced coverage floors, security hardening, structured logging with request ids | Complete |
+| 2 | Technical depth (25%) | Test harness and its first fifteen server suites (sixteen today), client tests with Vitest, ESLint plus one root Prettier config, four-job CI with enforced coverage floors, security hardening, structured logging with request ids | Complete |
 | 3 | Feature gaps (20%) | Screen sharing, action-item tracking, dashboard search and Markdown export; recording, shared notes, mentions, workspaces and analytics still open | Partially complete |
 | 4 | Documentation and presentation (20% + 10%) | This report, the README, the architecture document, the diagram, the demo runbook, repository hygiene | This document |
 
