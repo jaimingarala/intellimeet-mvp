@@ -62,6 +62,41 @@ test('every job that captures test output publishes it to the run page', () => {
   }
 });
 
+/**
+ * The publish step writes to a file the runner controls, so it succeeds whether
+ * or not it wrote anything useful: a parser handed a log it does not understand
+ * exits zero after publishing "no test summary in the output", and the job stays
+ * green with nothing on the page. Nothing in the run page reports that, which is
+ * why the step has to check its own output — and why this pins the check.
+ */
+test('every publish step proves its block reached the summary file', () => {
+  const publishing = steps.filter((step) => /- name: Publish summary/.test(step));
+  assert.equal(publishing.length, 3, 'expected three publish steps');
+
+  for (const step of publishing) {
+    const kind = step.match(/ci-summary\.mjs (\w+)/)?.[1];
+    assert.ok(kind, 'a publish step does not name the kind to parse');
+
+    const label = kind.charAt(0).toUpperCase() + kind.slice(1);
+    // A block, so the check runs after the write rather than instead of it.
+    assert.match(
+      step,
+      /run: \|/,
+      `${kind}: the publish step is not a block, so its check would not follow the write`,
+    );
+    assert.match(
+      step,
+      new RegExp(`grep -q '\\^### ${label}'`),
+      `${kind}: nothing fails when the summary block is missing`,
+    );
+    assert.match(
+      step,
+      /exit 1/,
+      `${kind}: the check does not fail the step when the block is missing`,
+    );
+  }
+});
+
 test('the summary is the job kind whose output was captured', () => {
   for (const job of jobs) {
     const log = job.match(LOG_NAME)?.[1];
