@@ -593,7 +593,7 @@ boot the **real** entry point with the Mongoose models swapped for in-memory
 stubs, so the middleware order, the 404 and the error handler are covered too.
 
 Today: **179** server tests across sixteen suites, **40** client tests across four
-files, and **70** tooling tests — and the numbers are enforced rather than
+files, and **71** tooling tests — and the numbers are enforced rather than
 reported. The server floor is 85% lines and functions / 70% branches, measured at
 91.8% / 94.0% / 86.2%; the client's floor is 95% lines, statements and functions /
 90% branches, measured at 100% / 95.3% over `client/src/lib`. Two of the checks are quieter than that and worth naming,
